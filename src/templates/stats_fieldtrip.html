@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>연간 교외체험학습 통계 (국내/국외)</title>
+    <style>
+        body { font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; padding: 20px; background: #f4f4f9; }
+        h2 { text-align: center; color: #333; margin-bottom: 5px; }
+        .subtitle { text-align: center; color: #666; font-size: 0.9em; margin-bottom: 30px; }
+        
+        .card { background: #fff; padding: 20px; margin-bottom: 15px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-left: 5px solid #ccc; }
+        /* 상태별 카드 색상 */
+        .card.has-data { border-left-color: #28a745; }
+        .card.warning { border-left-color: #fd7e14; }
+        .card.violation { border-left-color: #dc3545; }
+        
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .name-tag { font-size: 1.3em; font-weight: bold; }
+        
+        .section-title { font-size: 0.9em; font-weight: bold; color: #555; margin-bottom: 5px; margin-top: 10px; }
+        
+        /* 프로그래스 바 스타일 */
+        .progress-group { margin-bottom: 15px; }
+        .progress-container { width: 100%; background-color: #e9ecef; border-radius: 8px; height: 18px; position: relative; }
+        .progress-bar { height: 100%; border-radius: 8px; text-align: center; color: white; font-size: 0.75em; line-height: 18px; transition: width 0.5s; }
+        .limit-line { position: absolute; top: 0; bottom: 0; width: 2px; background: #333; z-index: 5; opacity: 0.3; }
+        
+        /* 뱃지 스타일 */
+        .badge { padding: 2px 6px; border-radius: 4px; font-size: 0.75em; color: white; margin-left: 5px; vertical-align: middle; }
+        .bg-red { background: #dc3545; } 
+        .bg-orange { background: #fd7e14; }
+        
+        .details { font-size: 0.85em; color: #666; padding-left: 10px; border-left: 2px solid #eee; margin-top: 5px; }
+        .no-data { text-align: center; color: #aaa; margin-top: 50px; }
+    </style>
+</head>
+<body>
+    <h2>🚌 연간 교외체험학습 상세 통계</h2>
+    <div class="subtitle">국내 {{ limits.dom_total }}일 (연속 {{ limits.dom_cons }}일) / 국외 {{ limits.intl_total }}일 별도 관리</div>
+    
+    <div style="max-width: 900px; margin: 0 auto;">
+        {% if not students %}
+            <div class='no-data'>체험학습 사용 기록이 없습니다.</div>
+        {% else %}
+            {% for s in students %}
+            <div class="card {{ s.card_class }}">
+                <div class="header">
+                    <span class="name-tag">{{ s.num }}번 {{ s.name }}</span>
+                    <div>
+                        {% if s.badges %}
+                            {% for b in s.badges %}
+                            <span class='badge {{ b.color_class }}'>{{ b.text }}</span>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="progress-group">
+                    <div class="section-title">🇰🇷 국내 현황 ({{ s.dom.total }} / {{ limits.dom_total }}일)</div>
+                    <div class="progress-container">
+                        <div class="progress-bar" style="width: {{ s.dom.pct }}%; background-color: {{ s.dom.color }};">
+                            {{ s.dom.total }}일
+                        </div>
+                        <div class="limit-line" style="left: 100%;" title="한도"></div>
+                    </div>
+                    <div class="details">
+                        {{ s.dom.details|safe if s.dom.details else '사용 내역 없음' }}
+                    </div>
+                </div>
+
+                {% if s.intl.total > 0 %}
+                <div class="progress-group">
+                    <div class="section-title">✈️ 국외 현황 ({{ s.intl.total }} / {{ limits.intl_total }}일)</div>
+                    <div class="progress-container">
+                        <div class="progress-bar" style="width: {{ s.intl.pct }}%; background-color: {{ s.intl.color }};">
+                            {{ s.intl.total }}일
+                        </div>
+                        <div class="limit-line" style="left: 100%;" title="한도"></div>
+                    </div>
+                    <div class="details">{{ s.intl.details|safe }}</div>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        {% endif %}
+    </div>
+</body>
+</html>

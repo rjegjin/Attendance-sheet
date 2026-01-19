@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ year }}년 {{ month }}월 출결 현황</title>
+    <style>
+        body { font-family: 'Malgun Gothic', serif; padding: 20px; }
+        h2 { text-align: center; border: 2px solid #000; padding: 10px; width: 60%; margin: 0 auto 20px auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 11pt; }
+        th, td { border: 1px solid #000; padding: 6px; text-align: center; vertical-align: middle; }
+        th { background-color: #f0f0f0; height: 30px; }
+        
+        /* [디자인 복구] 증빙서류 필요 행 강조 (연한 노랑) */
+        .doc-required { background-color: #fff9c4; } 
+        .reason-col { text-align: left; padding-left: 10px; }
+        
+        /* [디자인 복구] 교시 뱃지 (파란색 알약) */
+        .time-badge {
+            display: inline-block;
+            background-color: #e3f2fd; color: #0d47a1;
+            padding: 2px 8px; border-radius: 12px;
+            font-size: 0.9em; font-weight: bold; border: 1px solid #90caf9;
+        }
+    </style>
+</head>
+<body>
+    <h2>3학년 3반 월별 출결 현황 ({{ year }}년 {{ month }}월)</h2>
+    <table>
+        <thead>
+            <tr>
+                <th width="50">연번</th><th width="120">일자</th><th width="60">번호</th>
+                <th width="80">성명</th><th width="100">출결구분</th><th width="100">결시교시</th><th>사유</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% if not events %}
+            <tr><td colspan="7">특이사항 없음</td></tr>
+            {% else %}
+            {% for e in events %}
+            <tr class="{{ 'doc-required' if e.is_req else '' }}">
+                <td>{{ loop.index }}</td>
+                <td>{{ e.date_str }}</td>
+                <td>{{ e.num }}</td>
+                <td>{{ e.name }}</td>
+                <td>{{ e.raw_type }}</td>
+                <td>
+                    {% if e.time %}
+                    <span class="time-badge">{{ e.time }}</span>
+                    {% endif %}
+                </td>
+                <td class="reason-col">{{ e.reason }}</td>
+            </tr>
+            {% endfor %}
+            {% endif %}
+        </tbody>
+    </table>
+</body>
+</html>

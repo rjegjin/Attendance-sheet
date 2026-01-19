@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ month }}월 학급 출결 통계</title>
+    <style>
+        body { font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; padding: 20px; }
+        h2 { text-align: center; margin-bottom: 10px; }
+        .period { text-align: center; margin-bottom: 20px; font-size: 0.9em; color: #555; }
+        
+        table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            font-size: 10pt; 
+            text-align: center;
+            border: 2px solid #000;
+        }
+        
+        th, td { border: 1px solid #ccc; padding: 4px; height: 24px; }
+        
+        /* 헤더 스타일 */
+        th { background-color: #f4f4f4; font-weight: bold; border-bottom: 2px solid #000; }
+        .th-group { background-color: #e0e0e0; border-bottom: 1px solid #999; }
+        
+        /* 굵은 세로선 (섹션 구분) */
+        .thick-right { border-right: 2px solid #000 !important; }
+        th.thick-right { border-right: 2px solid #000 !important; }
+        
+        /* 데이터 강조 */
+        .highlight { background-color: #fff9c4; font-weight: bold; color: #000; }
+        .highlight-total { background-color: #e3f2fd; font-weight: bold; color: #0d47a1; }
+        .unexcused { color: #d32f2f; } /* 미인정 빨간색 */
+
+        /* 툴팁 (Tooltip) 구현 */
+        .tooltip-cell { position: relative; cursor: help; }
+        .tooltip-cell:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 100%; left: 50%; transform: translateX(-50%);
+            background: #333; color: #fff;
+            padding: 5px 8px; border-radius: 4px;
+            font-size: 11px; white-space: pre; z-index: 100;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            min-width: 60px;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>{{ month }}월 학급 출결 통계</h2>
+    <div class="period">기간: {{ period_str }}</div>
+
+    <table>
+        <thead>
+            <tr class="th-group">
+                <th rowspan="2" width="40">번호</th>
+                <th rowspan="2" width="70" class="thick-right">성명</th>
+                
+                <th colspan="4" class="thick-right">결석</th>
+                <th colspan="4" class="thick-right">지각</th>
+                <th colspan="4" class="thick-right">조퇴</th>
+                <th colspan="4" class="thick-right">결과</th>
+                
+                <th colspan="4">합계</th>
+            </tr>
+            <tr>
+                <th>질병</th><th>미인</th><th>기타</th><th class="thick-right">인정</th>
+                <th>질병</th><th>미인</th><th>기타</th><th class="thick-right">인정</th>
+                <th>질병</th><th>미인</th><th>기타</th><th class="thick-right">인정</th>
+                <th>질병</th><th>미인</th><th>기타</th><th class="thick-right">인정</th>
+                
+                <th>결석</th><th>지각</th><th>조퇴</th><th>결과</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in rows %}
+            <tr>
+                <td>{{ row.disp_num }}</td>
+                <td class="thick-right">{{ row.name }}</td>
+                
+                {% for cell in row.cells %}
+                <td class="{{ cell.classes }} {% if cell.tooltip %}tooltip-cell{% endif %}" 
+                    {% if cell.tooltip %}data-tooltip="{{ cell.tooltip }}"{% endif %}>
+                    {% if cell.count > 0 %}
+                        {{ cell.count }}
+                    {% else %}
+                        .
+                    {% endif %}
+                </td>
+                {% endfor %}
+                
+                {% for total in row.totals %}
+                <td class="{{ total.classes }} {% if total.tooltip %}tooltip-cell{% endif %}"
+                    {% if total.tooltip %}data-tooltip="{{ total.tooltip }}"{% endif %}>
+                    {% if total.count > 0 %}
+                        {{ total.count }}
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+</body>
+</html>

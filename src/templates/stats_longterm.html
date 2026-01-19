@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>장기결석 경고 리포트</title>
+    <style>
+        body { font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; padding: 20px; background: #f0f2f5; }
+        h2 { text-align: center; color: #333; margin-bottom: 10px; }
+        .subtitle { text-align: center; color: #666; font-size: 0.9em; margin-bottom: 30px; }
+        
+        .card { background: #fff; padding: 15px; margin-bottom: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); border-left: 6px solid #ccc; }
+        
+        /* 단계별 색상 클래스 */
+        .bg-green { border-left-color: #28a745; }
+        .bg-yellow { border-left-color: #ffc107; background-color: #fffbf2; }
+        .bg-orange { border-left-color: #fd7e14; background-color: #fff5eb; }
+        .bg-red { border-left-color: #dc3545; background-color: #ffeef0; }
+        .bg-black { border-left-color: #212529; background-color: #e2e3e5; }
+        
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .name-tag { font-size: 1.2em; font-weight: bold; }
+        
+        .status-badge { padding: 4px 8px; border-radius: 4px; font-size: 0.85em; font-weight: bold; color: #fff; background: #666; }
+        /* 뱃지 배경색 */
+        .status-bg-green { background: #28a745; }
+        .status-bg-yellow { background: #ffc107; color: #000; }
+        .status-bg-orange { background: #fd7e14; }
+        .status-bg-red { background: #dc3545; }
+        .status-bg-black { background: #212529; }
+
+        .progress-bg { width: 100%; background: #e9ecef; height: 10px; border-radius: 5px; margin: 10px 0; overflow: hidden; }
+        .progress-bar { height: 100%; transition: width 0.5s; }
+        
+        .details { font-size: 0.85em; color: #555; margin-top: 8px; line-height: 1.4; }
+    </style>
+</head>
+<body>
+    
+    <h2>📉 장기결석(질병/미인정/기타) 관리 리포트</h2>
+    <div class="subtitle">기준: {{ limits.l1 }}일(1차) → {{ limits.l2 }}일(2차) → {{ limits.l3 }}일(내교) → {{ limits.l4 }}일(정원외)</div>
+    
+    <div style="max-width: 800px; margin: 0 auto;">
+        {% if not rows %}
+            <div style="text-align:center; color:#aaa; margin-top:50px;">결석 일수가 있는 학생이 없습니다.</div>
+        {% else %}
+            {% for row in rows %}
+            <div class="card {{ row.color_class }}">
+                <div class="header">
+                    <span class="name-tag">{{ row.num }}번 {{ row.name }} <span style="font-size:0.8em; color:#666">({{ row.count }}일 누적)</span></span>
+                    <span class="status-badge status-{{ row.color_class }}">{{ row.msg }}</span>
+                </div>
+                <div class="progress-bg">
+                    <div class="progress-bar" style="width: {{ row.pct }}%; background-color: {{ row.bar_color }};"></div>
+                </div>
+                <div class="details">📝 상세: {{ row.details }}</div>
+            </div>
+            {% endfor %}
+        {% endif %}
+    </div>
+
+</body>
+</html>

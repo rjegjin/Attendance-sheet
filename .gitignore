@@ -1,0 +1,91 @@
+General OS files
+
+.DS_Store
+Thumbs.db
+*.log
+tmp/
+
+IDEs and Editors
+
+.idea/
+.vscode/
+*.swp
+*.swo
+*.iml
+
+Environment Variables
+
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+Node.js / Web (Not strictly needed for Python but good to have)
+
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dist/
+build/
+.eslintcache
+
+Python (CRITICAL)
+
+pycache/
+*.py[cod]
+*$py.class
+venv/
+env/
+.venv/
+*.egg-info/
+
+Streamlit Local Secrets
+
+.streamlit/secrets.toml
+
+.streamlit/ 폴더 전체를 공유하고 싶지 않다면 아래 주석 해제
+
+.streamlit/
+
+Java / Maven / Gradle (Optional)
+
+target/
+.gradle/
+build/
+*.class
+*.jar
+*.war
+*.ear
+
+C# / .NET (Optional)
+
+bin/
+obj/
+*.user
+*.suo
+
+Data files (Privacy Protection)
+
+실제 학생 데이터가 포함된 엑셀/PDF 파일 차단
+
+*.xls
+*.xlsx
+*.csv
+*.pdf
+
+Allow specific templates if necessary (예외적으로 허용할 템플릿이 있다면 !로 추가)
+
+!template.csv
+
+Project Specific Output & Config (CRITICAL)
+
+reports/
+cache/
+
+Security Keys (NEVER UPLOAD THESE)
+
+service_key.json
+config.json
+client_secret.json

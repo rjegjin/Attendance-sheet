@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ month }}월 증빙서류 체크리스트</title>
+    <style>
+        body { font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; padding: 20px; }
+        h2 { text-align: center; margin-bottom: 20px; color: #333; }
+        
+        /* 컨트롤 패널 */
+        .controls { 
+            display: flex; justify-content: space-between; align-items: center; 
+            margin-bottom: 15px; padding: 15px; 
+            background: #f8f9fa; border-radius: 10px; border: 1px solid #e9ecef;
+        }
+        .mode-group label { margin-right: 15px; cursor: pointer; font-weight: bold; color: #555; }
+        
+        .btn-group button { 
+            padding: 8px 16px; border: none; border-radius: 6px; 
+            cursor: pointer; font-weight: bold; margin-left: 8px;
+        }
+        .btn-save { background: #007bff; color: white; } 
+        .btn-reset { background: #ff6b6b; color: white; } 
+        
+        /* 테이블 스타일 */
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #dee2e6; padding: 10px 8px; text-align: center; }
+        th { background-color: #e9ecef; height: 40px; }
+        
+        .period { font-weight: bold; color: #0056b3; }
+        .col-idx { background: #f8f9fa; color: #868e96; }
+        .reason-cell { text-align: left; padding-left: 15px; }
+        
+        /* 뱃지 */
+        .time-badge {
+            display: inline-block; background-color: #e3f2fd; color: #0d47a1;
+            padding: 2px 8px; border-radius: 12px; font-size: 0.8em; font-weight: bold;
+            margin-left: 6px;
+        }
+        
+        /* 상태별 행 스타일 */
+        tr.submitted { background: #d4edda !important; color: #155724; } /* DB 완료 */
+        tr.completed { background: #f1f3f5; } /* 화면 체크 */
+        
+        /* 보기 모드 */
+        tr.completed.mode-strike { text-decoration: line-through; color: #adb5bd; }
+        tr.completed.mode-hide { display: none; }
+        tr.submitted.mode-hide { display: none; }
+    </style>
+    <script>
+        const KEY = "{{ storage_key }}";
+        let mode = 'strike'; 
+
+        window.onload = () => load();
+
+        function setMode(m) { 
+            mode = m; 
+            updateView(); 
+            saveState(); 
+        }
+
+        function toggle(cb, id) {
+            const row = document.getElementById(id);
+            if (cb.checked) row.classList.add('completed');
+            else row.classList.remove('completed');
+            updateView(); 
+            saveState();
+        }
+
+        function updateView() {
+            document.querySelectorAll('tr.data-row').forEach(row => {
+                row.classList.remove('mode-strike', 'mode-hide');
+                
+                // 완료되었거나(화면체크) 제출된(DB) 경우
+                if (row.classList.contains('completed') || row.classList.contains('submitted')) {
+                    if (row.classList.contains('submitted') && mode === 'hide') {
+                        row.classList.add('mode-hide');
+                    } else if (row.classList.contains('completed')) {
+                        row.classList.add('mode-' + mode);
+                    }
+                }
+            });
+        }
+
+        function saveState() {
+            const state = { mode: mode, checked: [] };
+            document.querySelectorAll('.chk:not(:disabled)').forEach((cb) => {
+                if(cb.checked) {
+                    // data-rid 속성을 사용하여 인덱스 저장
+                    state.checked.push(cb.getAttribute('data-rid'));
+                }
+            });
+            localStorage.setItem(KEY, JSON.stringify(state));
+        }
+
+        function load() {
+            const data = JSON.parse(localStorage.getItem(KEY));
+            
+            // 모드 복원
+            if(data && data.mode) { 
+                mode = data.mode; 
+                const radio = document.querySelector(`input[value="${mode}"]`);
+                if(radio) radio.checked = true;
+            }
+            
+            // 체크 상태 복원
+            if(data && data.checked) {
+                data.checked.forEach(rid => {
+                    const cb = document.querySelector(`.chk[data-rid="${rid}"]`);
+                    if(cb && !cb.disabled) { 
+                        cb.checked = true; 
+                        const row = document.getElementById(rid);
+                        if(row) row.classList.add('completed'); 
+                    }
+                });
+            }
+            updateView();
+        }
+
+        function reset() {
+            if(confirm('화면의 체크박스 상태를 초기화하시겠습니까? (DB 저장 데이터 제외)')) { 
+                localStorage.removeItem(KEY); 
+                location.reload(); 
+            }
+        }
+
+        function exportJson() {
+            let data = {};
+            document.querySelectorAll('input.chk').forEach(cb => {
+                // 체크되어 있고, data-key가 있는 항목만 수집
+                if (cb.checked && cb.getAttribute('data-key')) {
+                    data[cb.getAttribute('data-key')] = true;
+                }
+            });
+            
+            let fileName = "checklist_update_{{ year }}_{{ month_pad }}.json";
+            let blob = new Blob([JSON.stringify(data, null, 4)], {type: "application/json"});
+            let a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+    </script>
+</head>
+<body>
+    <h2>✅ {{ year }}년 {{ month }}월 증빙서류 제출 체크리스트</h2>
+    
+    <div class="controls">
+        <div class="mode-group">
+            <span>👁️ 보기 모드: </span>
+            <label><input type="radio" name="vm" value="strike" checked onclick="setMode('strike')"> 취소선</label>
+            <label><input type="radio" name="vm" value="hide" onclick="setMode('hide')"> 숨기기</label>
+        </div>
+        <div class="btn-group">
+            <button class="btn-save" onclick="exportJson()">💾 변경사항 저장(JSON)</button>
+            <button class="btn-reset" onclick="reset()">🔄 초기화</button>
+        </div>
+    </div>
+    
+    <table>
+        <thead>
+            <tr>
+                <th width="40">연번</th>
+                <th width="50">확인</th>
+                <th width="15%">기간</th>
+                <th width="50">번호</th>
+                <th width="80">성명</th>
+                <th width="20%">구분</th>
+                <th>사유</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% if not rows %}
+            <tr><td colspan="7">제출 대상 서류가 없습니다.</td></tr>
+            {% else %}
+            {% for row in rows %}
+            <tr id="{{ row.rid }}" class="data-row {{ 'submitted' if row.is_done else '' }}">
+                <td class="col-idx">{{ row.idx }}</td>
+                <td>
+                    <input type="checkbox" class="chk" 
+                           data-key="{{ row.data_key }}" 
+                           data-rid="{{ row.rid }}"
+                           {{ 'checked disabled' if row.is_done else '' }} 
+                           onclick="toggle(this, '{{ row.rid }}')">
+                </td>
+                <td class="period">{{ row.period_str }}</td>
+                <td>{{ row.num }}</td>
+                <td>{{ row.name }}</td>
+                <td>
+                    {{ row.type }}
+                    {% if row.time %}
+                    <span class="time-badge">{{ row.time }}</span>
+                    {% endif %}
+                </td>
+                <td class="reason-cell">{{ row.reason }}</td>
+            </tr>
+            {% endfor %}
+            {% endif %}
+        </tbody>
+    </table>
+</body>
+</html>
