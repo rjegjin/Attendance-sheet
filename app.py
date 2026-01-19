@@ -5,43 +5,52 @@ import glob
 import shutil
 import webbrowser
 import datetime
-import json  # json 모듈 추가
+import json
 
 # --------------------------------------------------------------------------
 # 1. PATH CONFIGURATION & SECRETS SETUP (CRITICAL)
-# 프로젝트 루트 경로 설정 및 인증 키 파일 자동 생성
+# 프로젝트 루트 경로 설정 및 필수 설정 파일(Key, Config) 자동 생성
 # --------------------------------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
     sys.path.append(BASE_DIR)
 
-# [CLOUD DEPLOYMENT] service_key.json 자동 생성 로직
-# GitHub에는 보안상 키 파일을 올리지 않으므로, Streamlit Secrets에서 값을 읽어와
-# 프로젝트 루트(BASE_DIR)에 파일을 즉석에서 생성합니다.
-KEY_FILE_PATH = os.path.join(BASE_DIR, 'service_key.json')
-
-if not os.path.exists(KEY_FILE_PATH):
-    # Streamlit Cloud 환경인지 확인 (Secrets에 해당 키가 있는지 체크)
-    if 'gcp_service_account' in st.secrets:
-        try:
-            # Secrets에서 정보를 딕셔너리로 가져옴
-            key_dict = dict(st.secrets['gcp_service_account'])
-            
-            # private_key의 줄바꿈 문자(\n)가 문자열로 들어왔을 경우 실제 줄바꿈으로 치환
-            if 'private_key' in key_dict:
-                key_dict['private_key'] = key_dict['private_key'].replace('\\n', '\n')
+def create_file_from_secrets(filename, secret_key):
+    """
+    Streamlit Secrets에서 데이터를 읽어 로컬 json 파일을 생성하는 헬퍼 함수.
+    이 함수가 있어야 서버에서 service_key.json과 config.json을 인식할 수 있습니다.
+    """
+    file_path = os.path.join(BASE_DIR, filename)
+    
+    # 파일이 이미 존재하면 굳이 다시 만들지 않음 (로컬 개발 환경 보호)
+    if not os.path.exists(file_path):
+        if secret_key in st.secrets:
+            try:
+                # Secrets 데이터를 딕셔너리로 가져옴
+                data = dict(st.secrets[secret_key])
                 
-            # service_key.json 파일 생성
-            with open(KEY_FILE_PATH, 'w', encoding='utf-8') as f:
-                json.dump(key_dict, f, indent=4)
-            
-            print(f"✅ [System] 인증 키 파일이 생성되었습니다: {KEY_FILE_PATH}")
-            
-        except Exception as e:
-            st.error(f"❌ 인증 키 생성 중 오류 발생: {e}")
-    else:
-        # 로컬 환경인데 파일이 없는 경우 or Secrets 설정이 안 된 경우
-        print(f"⚠️ {KEY_FILE_PATH} 파일을 찾을 수 없습니다. (로컬 실행 시 파일이 있어야 함)")
+                # private_key의 줄바꿈 문자(\\n)가 문자열로 들어왔을 경우 실제 줄바꿈(\n)으로 치환
+                # (service_key.json의 포맷 유지를 위해 필수)
+                if 'private_key' in data:
+                    data['private_key'] = data['private_key'].replace('\\n', '\n')
+                
+                # JSON 파일 생성 (한글 깨짐 방지 ensure_ascii=False)
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, indent=4, ensure_ascii=False)
+                
+                print(f"✅ [System] {filename} 파일이 Secrets로부터 생성되었습니다.")
+            except Exception as e:
+                print(f"❌ [Error] {filename} 생성 실패: {e}")
+        else:
+            # Secrets에 해당 섹션이 없는 경우
+            print(f"⚠️ [Warning] Secrets에 '{secret_key}' 섹션이 없습니다. {filename}을 생성할 수 없습니다.")
+
+# (1) 인증 키 파일 생성 (Secrets의 [gcp_service_account] 섹션 사용)
+create_file_from_secrets('service_key.json', 'gcp_service_account')
+
+# (2) 설정 파일 생성 (Secrets의 [app_config] 섹션 사용)
+# "명렬표를 불러오지 못했습니다" 에러를 해결하기 위해 필수입니다.
+create_file_from_secrets('config.json', 'app_config')
 
 # --------------------------------------------------------------------------
 # 2. IMPORT CUSTOM MODULES
@@ -130,9 +139,11 @@ with st.sidebar:
     
     # 2. 월 선택 (멀티 셀렉트)
     st.write("📅 **분석 대상 월 선택**")
+    # data_loader에 ACADEMIC_MONTHS가 있으면 사용, 없으면 기본값 사용
     all_months = getattr(data_loader, 'ACADEMIC_MONTHS', [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2])
     
     current_month = datetime.datetime.now().month
+    # 학기 중인 월이 선택되도록 기본값 설정
     default_selection = [current_month] if current_month in all_months else [3]
     
     selected_months = st.multiselect(
@@ -166,7 +177,8 @@ if menu == "대시보드(Home)":
     
     with st.spinner("명렬표 데이터를 확인 중입니다..."):
         try:
-            # 인증 키 파일이 없으면 여기서 에러가 날 수 있으므로, 상단의 파일 생성 로직이 중요함
+            # 여기서 config.json이나 service_key.json이 없으면 에러가 발생할 수 있음
+            # 상단의 create_file_from_secrets 함수가 이를 방지함
             roster = data_loader.get_master_roster()
             if roster:
                 st.success(f"✅ 명렬표 로드 완료: 총 {len(roster)}명의 학생 데이터가 준비되었습니다.")
@@ -174,8 +186,7 @@ if menu == "대시보드(Home)":
                 st.error("❌ 명렬표를 불러오지 못했습니다. 구글 시트 연결을 확인하세요.")
         except Exception as e:
             st.error(f"데이터 로드 중 오류 발생: {e}")
-            if not os.path.exists(KEY_FILE_PATH):
-                st.warning("💡 힌트: 'service_key.json' 파일이 없습니다. Streamlit Secrets 설정을 확인해주세요.")
+            st.warning("💡 힌트: 'service_key.json' 또는 'config.json' 파일이 생성되지 않았을 수 있습니다. Streamlit Secrets 설정을 확인해주세요.")
 
 elif menu == "월별/학급별 리포트":
     st.subheader("📑 월별 상세 및 학급별 통계 리포트")

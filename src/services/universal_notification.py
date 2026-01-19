@@ -5,6 +5,12 @@ import sys
 # [수리] 나침반 가져오기 (절대 경로로 .env 찾기 위함)
 from src.paths import ROOT_DIR
 
+# ✅ [New] 설정 관리자 연동
+try:
+    from src.services.config_manager import GLOBAL_CONFIG
+except ImportError:
+    GLOBAL_CONFIG = {}
+
 # [중요] 로컬 .env 로딩을 위한 라이브러리
 try:
     from dotenv import load_dotenv
@@ -17,7 +23,7 @@ except ImportError:
 def get_telegram_config():
     """
     환경에 따라 적절한 키 값을 찾아 반환하는 함수
-    우선순위: 1. Streamlit Secrets (클라우드) -> 2. os.getenv (로컬 .env)
+    우선순위: 1. Streamlit Secrets (클라우드) -> 2. config.json -> 3. os.getenv (로컬 .env)
     """
     bot_token = None
     chat_id = None
@@ -33,7 +39,13 @@ def get_telegram_config():
     except Exception:
         pass # 로컬 환경이거나 streamlit 모듈 에러 시 무시
 
-    # 2. 로컬 환경 변수(.env) 확인 (Secrets에서 못 찾았을 경우)
+    # 2. config.json 확인 (차선책)
+    if not bot_token:
+        bot_token = GLOBAL_CONFIG.get("telegram_token")
+    if not chat_id:
+        chat_id = GLOBAL_CONFIG.get("telegram_chat_id")
+
+    # 3. 로컬 환경 변수(.env) 확인 (Secrets에서 못 찾았을 경우)
     if not bot_token:
         bot_token = os.getenv("TELEGRAM_TOKEN")
     
@@ -60,6 +72,11 @@ def send_alert(msg):
     if not BOT_TOKEN or not CHAT_ID:
         # 키가 없으면 조용히 실패 (로그만 남김)
         return False
+    
+    # [Config] 학교 이름을 메시지에 추가
+    school_name = GLOBAL_CONFIG.get("school_name", "")
+    if school_name:
+        msg = f"<b>[{school_name}]</b>\n{msg}"
 
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {

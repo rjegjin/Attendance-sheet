@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ month_str }} 통합 리포트</title>
+    <style>
+        body { 
+            font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; 
+            padding: 20px; 
+            background-color: #f0f2f5; 
+            margin: 0;
+        }
+        .container { 
+            background: white; 
+            padding: 25px; 
+            border-radius: 16px; 
+            max-width: 500px; 
+            margin: 0 auto; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+        h1 { 
+            text-align: center; 
+            color: #1a73e8; 
+            margin: 10px 0 20px 0; 
+            font-size: 1.4rem;
+        }
+        
+        /* 네비게이션 스타일 */
+        .nav-wrapper {
+            text-align: center;
+            margin-bottom: 25px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+        }
+        select.month-nav {
+            padding: 12px 15px;
+            font-size: 16px;
+            border-radius: 8px;
+            border: 1px solid #cbd5e0;
+            width: 100%;
+            background-color: #fff;
+            color: #2d3748;
+            cursor: pointer;
+            appearance: none; /* 기본 화살표 제거 (커스텀 디자인 위해) */
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 1rem center;
+            background-size: 1em;
+        }
+        select.month-nav:hover {
+            border-color: #1a73e8;
+        }
+        select.month-nav:focus {
+            outline: none;
+            border-color: #1a73e8;
+            box-shadow: 0 0 0 3px rgba(26,115,232,0.2);
+        }
+
+        /* 링크 카드 스타일 */
+        .link-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .link-card { 
+            display: flex;
+            align-items: center;
+            padding: 16px; 
+            background: #fff; 
+            border: 1px solid #e2e8f0; 
+            border-radius: 10px;
+            text-decoration: none; 
+            color: #2d3748; 
+            font-weight: 600;
+            font-size: 1.05rem;
+            transition: all 0.2s ease;
+        }
+        .link-card:hover { 
+            background: #f8fbff; 
+            border-color: #1a73e8; 
+            color: #1a73e8; 
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px rgba(26, 115, 232, 0.1);
+        }
+        .link-icon {
+            margin-right: 12px;
+            font-size: 1.2rem;
+        }
+        
+        /* 반응형 */
+        @media (max-width: 480px) {
+            .container { padding: 20px; border-radius: 0; min-height: 100vh; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 1. 제목 영역 -->
+        <h1>📁 {{ year }}년 {{ month }}월 통합 허브</h1>
+        
+        <!-- 2. 네비게이션 (드롭다운) -->
+        <div class="nav-wrapper">
+            <select class="month-nav" onchange="if(this.value) location.href=this.value;">
+                <option value="" disabled>📅 다른 월로 이동하기...</option>
+                {% for opt in nav_options %}
+                    <option value="{{ opt.path }}" {% if opt.current %}selected{% endif %}>
+                        {{ opt.label }} {% if opt.current %}(현재){% endif %}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <!-- 3. 링크 목록 -->
+        <div class="link-grid">
+            {% for link in links %}
+            <a href="{{ link.path }}" class="link-card">
+                <!-- 이모지만 추출해서 아이콘처럼 배치 (단순화) -->
+                <span class="link-icon">{{ link.name[:1] }}</span>
+                <span>{{ link.name[2:] }}</span>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</body>
+</html>

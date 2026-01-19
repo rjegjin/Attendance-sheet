@@ -13,29 +13,30 @@ from pathlib import Path
 from src.paths import (
     SERVICE_KEY_PATH, 
     CACHE_DIR, 
-    CONFIG_FILE_PATH,
+    # CONFIG_FILE_PATH,  <-- 제거됨 (Config Manager가 처리)
     ROOT_DIR,
     ensure_directories
 )
+
+# ✅ [New] 설정 관리자 연동 (여기서 모든 설정을 가져옴)
+try:
+    from src.services.config_manager import GLOBAL_CONFIG
+except ImportError:
+    # config_manager가 없을 때를 대비한 폴백(Fallback) - 개발 중 에러 방지
+    GLOBAL_CONFIG = {"target_year": 2025, "holidays": []}
+    print("⚠️ [DataLoader] config_manager를 찾을 수 없어 기본값을 사용합니다.")
 
 # 초기 폴더 생성
 ensure_directories()
 
 # =============================================================================
-# 설정 및 인증
+# 설정 및 인증 (Config Manager 사용으로 대폭 간소화)
 # =============================================================================
-def load_config():
-    if not CONFIG_FILE_PATH.exists():
-        return {"target_year": 2025, "holidays": []}
-    try:
-        with open(CONFIG_FILE_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except:
-        return {"target_year": 2025, "holidays": []}
 
-_CONFIG = load_config()
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Jlyok_qOggzj-KeC1O8xqa6OPyRm8KDw9P7ojNXc4UE/edit"
-TARGET_YEAR = _CONFIG.get("target_year", 2025)
+# 기존 load_config 함수 제거됨
+
+GOOGLE_SHEET_URL = GLOBAL_CONFIG.get("spreadsheet_url", "https://docs.google.com/spreadsheets/d/1Jlyok_qOggzj-KeC1O8xqa6OPyRm8KDw9P7ojNXc4UE/edit")
+TARGET_YEAR = GLOBAL_CONFIG.get("target_year", 2025)
 ACADEMIC_MONTHS = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2]
 
 # [싱글톤] 구글 연결 객체 재사용
@@ -43,27 +44,22 @@ _SHEET_CLIENT = None
 _DOC_INSTANCE = None
 
 def get_holidays():
-    config_holidays = _CONFIG.get("holidays", [])
-    if config_holidays:
-        lst = []
-        for d in config_holidays:
-            try: lst.append(datetime.datetime.strptime(d, "%Y-%m-%d").date())
-            except: pass
-        return lst
+    """
+    Config Manager가 이미 휴일 데이터를 파싱해서 리스트로 만들어 두었음.
+    날짜 문자열을 date 객체로 변환만 하면 됨.
+    """
+    raw_holidays = GLOBAL_CONFIG.get("holidays", [])
+    date_objs = []
     
-    holiday_file = ROOT_DIR / f"holidays_{TARGET_YEAR}.json"
-    if holiday_file.exists():
+    for d_str in raw_holidays:
         try:
-            with open(holiday_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                lst = []
-                for d_str in data.keys():
-                    try: lst.append(datetime.datetime.strptime(d_str, "%Y-%m-%d").date())
-                    except: pass
-                return lst
-        except: pass
-    return []
+            date_objs.append(datetime.datetime.strptime(d_str, "%Y-%m-%d").date())
+        except ValueError:
+            pass
+            
+    return date_objs
 
+# 전역 변수에 할당
 HOLIDAYS_KR = get_holidays()
 
 def get_google_client():
@@ -143,7 +139,6 @@ def get_master_roster(force_update=False):
             except: continue
             
         if not sheet: 
-            # 없으면 기본정보 탭 시도
             try: sheet = doc.worksheet('기본정보'); 
             except: 
                 print("❌ 명렬표 시트를 찾을 수 없습니다.")
@@ -253,10 +248,9 @@ def _parse_and_save(target_month, all_values, roster):
             val_check = str(row[col_idx]).strip() 
             final_val = ""
             
-            # [값 보정] 텍스트가 있으면 우선, 없으면 체크박스(TRUE/FALSE) 확인
-            val_text = ""
             if col_idx + 1 < len(row):
-                val_text = str(row[col_idx + 1]).strip() # 바로 옆 칸(사유) 확인
+                val_text = str(row[col_idx + 1]).strip() 
+            else: val_text = ""
             
             if val_text:
                 final_val = val_text
@@ -268,7 +262,6 @@ def _parse_and_save(target_month, all_values, roster):
             if not final_val or final_val == "-" or final_val == "0" or final_val.upper() == "FALSE": 
                 continue
 
-            # [상세 정보 파싱] (시간, 사유)
             time_info = ""
             match_time = re.search(r'\((.*?)\)', final_val)
             if match_time: time_info = match_time.group(1)
@@ -290,9 +283,6 @@ def _parse_and_save(target_month, all_values, roster):
     return events
 
 
-# =============================================================================
-# 2. 데이터 다운로드 인터페이스
-# =============================================================================
 def load_all_events(file_path_ignored, target_month, roster, force_update=False):
     if target_month is None: return []
     cache_key = f"events_{target_month}"
@@ -353,7 +343,6 @@ def sync_all_data_batch(roster, target_months=None):
                     break
             
             if target_title:
-                # 🚨 [범위 확장] AZ(52열) -> ZZ(702열)로 변경하여 짤림 방지
                 ranges.append(f"'{target_title}'!A1:ZZ2000")
                 valid_months.append(m)
             else:
@@ -373,9 +362,6 @@ def sync_all_data_batch(roster, target_months=None):
     except Exception as e:
         print(f"❌ 일괄 다운로드 중 오류 발생: {e}")
 
-# =============================================================================
-# 유틸리티 함수
-# =============================================================================
 def check_gap_is_holiday(start, end):
     delta = (end - start).days
     gap_days = [start + datetime.timedelta(days=x) for x in range(1, delta)]
