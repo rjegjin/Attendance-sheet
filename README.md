@@ -1,3 +1,14 @@
+# 🏫 학급 출결 관리 통합 시스템 (Attendance Management System)
+
+[![Python](https://img.shields.io/badge/Python-3.9%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.40%2B-ff4b4b?logo=streamlit&logoColor=white)](https://streamlit.io/)
+[![Google Sheets API](https://img.shields.io/badge/Google%20Sheets-API-green?logo=google-sheets&logoColor=white)](https://developers.google.com/sheets/api)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+> **구글 스프레드시트(Google Sheets)**에 입력된 실시간 출결 데이터를 기반으로, **나이스(NEIS) 업로드용 리포트, 생활기록 달력, 각종 통계 자료**를 자동으로 생성하는 교무 업무 자동화 솔루션입니다.
+
+---
+
 ## ✨ 주요 기능 (Key Features)
 
 이 시스템은 다음과 같은 기능을 제공합니다:
