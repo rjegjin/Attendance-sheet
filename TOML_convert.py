@@ -4,7 +4,7 @@ import os
 # ------------------------------------------------------------------
 # 설정: 변환할 JSON 파일명
 # ------------------------------------------------------------------
-INPUT_FILE = 'service_key.json'
+INPUT_FILE = 'service_key_safe.json'
 
 def convert_json_to_toml():
     # 1. 파일 존재 여부 확인
