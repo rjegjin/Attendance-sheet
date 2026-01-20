@@ -95,19 +95,17 @@ def display_html_report(file_path, height=800):
             html = f.read()
         fname = os.path.basename(file_path)
         
-        # 다운로드 버튼
         col1, col2 = st.columns([1, 4])
         with col1:
             st.download_button(f"📥 {fname} 다운로드", html, fname, "text/html")
         
-        # 미리보기
         st.components.v1.html(html, height=height, scrolling=True)
     else:
-        st.info(f"ℹ️ 아직 생성된 리포트가 없습니다: {os.path.basename(file_path)}")
+        st.info(f"ℹ️ 리포트가 없습니다: {os.path.basename(file_path)}")
 
-def navigate_to(page_name):
+# [수정된 함수] 버튼 클릭 콜백으로 사용
+def set_page(page_name):
     st.session_state['menu'] = page_name
-    st.rerun()
 
 # --------------------------------------------------------------------------
 # 5. SIDEBAR
@@ -117,11 +115,19 @@ with st.sidebar:
     st.markdown("---")
     
     # Session State와 연동된 라디오 버튼
+    # on_change 이벤트를 사용하여 상태 변경을 감지합니다.
+    def on_menu_change():
+        st.session_state['menu'] = st.session_state._menu_selection
+
     menu = st.radio("작업 선택", 
         ["대시보드(Home)", "월별/학급별 리포트", "교외체험학습 통계", 
          "생리인정결석 체크", "장기결석 경고 관리", "증빙서류 체크리스트", 
          "주간 요약 & 달력"],
-        key='menu'
+        index=["대시보드(Home)", "월별/학급별 리포트", "교외체험학습 통계", 
+               "생리인정결석 체크", "장기결석 경고 관리", "증빙서류 체크리스트", 
+               "주간 요약 & 달력"].index(st.session_state['menu']),
+        key='_menu_selection',
+        on_change=on_menu_change
     )
     
     st.markdown("---")
@@ -130,7 +136,6 @@ with st.sidebar:
     st.write("📅 **분석 대상 월 선택**")
     all_months = getattr(data_loader, 'ACADEMIC_MONTHS', [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2])
     
-    # 전체 선택 체크박스
     select_all = st.checkbox("✅ 1년 전체 선택 (일괄)", value=False)
     
     if select_all:
@@ -179,10 +184,12 @@ with st.sidebar:
 # 6. MAIN CONTENT
 # --------------------------------------------------------------------------
 
-if menu == "대시보드(Home)":
+# 현재 메뉴 상태에 따라 화면 표시
+current_menu = st.session_state['menu']
+
+if current_menu == "대시보드(Home)":
     st.header(f"👋 {CURRENT_YEAR}학년도 출결 관리 대시보드")
     
-    # 현황 요약 카드
     col_a, col_b = st.columns(2)
     with col_a:
         st.metric(label="총 학생 수", value=f"{len(data_loader.get_master_roster())}명")
@@ -191,30 +198,29 @@ if menu == "대시보드(Home)":
     
     st.markdown("### 🚀 바로가기 메뉴")
     
-    # [기능 개선 3] 대시보드 퀵 메뉴 (큰 버튼)
     row1_1, row1_2, row1_3 = st.columns(3)
     row2_1, row2_2, row2_3 = st.columns(3)
     
-    # 버튼 클릭 시 navigate_to 함수를 통해 페이지 이동
-    if row1_1.button("📑 월별/학급별 리포트", use_container_width=True, type="primary"):
-        navigate_to("월별/학급별 리포트")
+    # [수정] on_click 콜백을 사용하여 페이지 이동 처리
+    row1_1.button("📑 월별/학급별 리포트", use_container_width=True, type="primary", 
+                  on_click=set_page, args=("월별/학급별 리포트",))
     
-    if row1_2.button("🚌 교외체험학습 통계", use_container_width=True):
-        navigate_to("교외체험학습 통계")
+    row1_2.button("🚌 교외체험학습 통계", use_container_width=True, 
+                  on_click=set_page, args=("교외체험학습 통계",))
         
-    if row1_3.button("🩸 생리인정결석 체크", use_container_width=True):
-        navigate_to("생리인정결석 체크")
+    row1_3.button("🩸 생리인정결석 체크", use_container_width=True, 
+                  on_click=set_page, args=("생리인정결석 체크",))
         
-    if row2_1.button("📉 장기결석 경고", use_container_width=True):
-        navigate_to("장기결석 경고 관리")
+    row2_1.button("📉 장기결석 경고", use_container_width=True, 
+                  on_click=set_page, args=("장기결석 경고 관리",))
         
-    if row2_2.button("✅ 증빙서류 체크리스트", use_container_width=True):
-        navigate_to("증빙서류 체크리스트")
+    row2_2.button("✅ 증빙서류 체크리스트", use_container_width=True, 
+                  on_click=set_page, args=("증빙서류 체크리스트",))
         
-    if row2_3.button("📅 주간 요약 & 달력", use_container_width=True):
-        navigate_to("주간 요약 & 달력")
+    row2_3.button("📅 주간 요약 & 달력", use_container_width=True, 
+                  on_click=set_page, args=("주간 요약 & 달력",))
 
-elif menu == "월별/학급별 리포트":
+elif current_menu == "월별/학급별 리포트":
     st.subheader(f"📑 {CURRENT_YEAR}학년도 월별/학급별 리포트")
     st.info("나이스 업로드용 '월별 출결 상세'와 내부 결재용 '학급별 통계'를 생성합니다.")
     
@@ -226,7 +232,6 @@ elif menu == "월별/학급별 리포트":
                 if index_gen: index_gen.run_monthly_index(selected_months)
             st.success("생성 완료!")
             
-            # [기능 개선 1] 월별/학급별 리포트 모두 표시
             tabs = st.tabs([f"{m}월" for m in selected_months])
             for i, m in enumerate(selected_months):
                 with tabs[i]:
@@ -240,25 +245,25 @@ elif menu == "월별/학급별 리포트":
                         path_stats = os.path.join(REPORTS_DIR, "monthly", f"{m:02d}월_학급별현황.html")
                         display_html_report(path_stats)
 
-elif menu == "교외체험학습 통계":
+elif current_menu == "교외체험학습 통계":
     st.subheader("🚌 교외체험학습 연간 통계")
     if st.button("📊 분석 실행"):
         fieldtrip_gen.run_fieldtrip_stats()
         display_html_report(os.path.join(REPORTS_DIR, "stats", "연간_체크_체험학습통계.html"))
 
-elif menu == "생리인정결석 체크":
+elif current_menu == "생리인정결석 체크":
     st.subheader("🩸 생리인정결석 체크")
     if st.button("🩸 분석 실행"):
         menstrual_gen.run_menstrual_stats()
         display_html_report(os.path.join(REPORTS_DIR, "stats", "생리인정결석_통계.html"))
 
-elif menu == "장기결석 경고 관리":
+elif current_menu == "장기결석 경고 관리":
     st.subheader("📉 장기결석 경고")
     if st.button("📉 분석 실행"):
         absence_gen.run_long_term_absence()
         display_html_report(os.path.join(REPORTS_DIR, "stats", "장기결석_경고리포트.html"))
 
-elif menu == "증빙서류 체크리스트":
+elif current_menu == "증빙서류 체크리스트":
     st.subheader("✅ 증빙서류 체크리스트")
     if st.button("📝 생성 실행"):
         checklist_gen.run_checklists(selected_months)
@@ -267,7 +272,7 @@ elif menu == "증빙서류 체크리스트":
             with tabs[i]:
                 display_html_report(os.path.join(REPORTS_DIR, "checklist", f"{m:02d}월_증빙서류_체크리스트.html"))
 
-elif menu == "주간 요약 & 달력":
+elif current_menu == "주간 요약 & 달력":
     st.subheader("📅 주간 요약 및 생활기록 달력")
     st.info("주 단위 출결 요약과 NEIS 입력용 생활기록 달력을 생성합니다.")
     
@@ -275,11 +280,13 @@ elif menu == "주간 요약 & 달력":
         if not selected_months: st.warning("월을 선택해주세요.")
         else:
             with st.spinner("생성 중..."):
-                weekly_gen.run_weekly(selected_months)
-                calendar_gen.run_calendar(selected_months)
-            st.success("완료!")
+                try:
+                    weekly_gen.run_weekly(selected_months)
+                    calendar_gen.run_calendar(selected_months)
+                    st.success("완료!")
+                except Exception as e:
+                    st.error(f"생성 중 오류 발생: {e}")
             
-            # [기능 개선 2] 주간 요약 및 달력 표시 로직 추가
             tabs = st.tabs([f"{m}월" for m in selected_months])
             for i, m in enumerate(selected_months):
                 with tabs[i]:
