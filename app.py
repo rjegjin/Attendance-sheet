@@ -49,6 +49,7 @@ try:
     from src.components import generate_checklist as checklist_gen
     from src.components import universal_weekly_summary_batch as weekly_gen
     from src.components import universal_calendar_batch as calendar_gen
+    
     # 인덱스 생성기 (선택 사항)
     try:
         from src.components import universal_monthly_index as index_gen
@@ -101,9 +102,10 @@ def display_html_report(file_path, height=800):
         
         st.components.v1.html(html, height=height, scrolling=True)
     else:
-        st.info(f"ℹ️ 리포트가 없습니다: {os.path.basename(file_path)}")
+        # 파일이 없을 때 경로를 보여주어 디버깅 도움
+        st.info(f"ℹ️ 아직 생성된 리포트가 없습니다.\n(경로: {os.path.basename(file_path)})")
 
-# [수정된 함수] 버튼 클릭 콜백으로 사용
+# [수정된 함수] 버튼 클릭 콜백으로 사용 (상태 충돌 방지)
 def set_page(page_name):
     st.session_state['menu'] = page_name
 
@@ -115,24 +117,27 @@ with st.sidebar:
     st.markdown("---")
     
     # Session State와 연동된 라디오 버튼
-    # on_change 이벤트를 사용하여 상태 변경을 감지합니다.
     def on_menu_change():
         st.session_state['menu'] = st.session_state._menu_selection
 
+    menu_options = ["대시보드(Home)", "월별/학급별 리포트", "교외체험학습 통계", 
+                    "생리인정결석 체크", "장기결석 경고 관리", "증빙서류 체크리스트", 
+                    "주간 요약 & 달력"]
+    
+    # 현재 상태가 옵션에 없으면 기본값으로 복귀 (안전장치)
+    if st.session_state['menu'] not in menu_options:
+        st.session_state['menu'] = menu_options[0]
+
     menu = st.radio("작업 선택", 
-        ["대시보드(Home)", "월별/학급별 리포트", "교외체험학습 통계", 
-         "생리인정결석 체크", "장기결석 경고 관리", "증빙서류 체크리스트", 
-         "주간 요약 & 달력"],
-        index=["대시보드(Home)", "월별/학급별 리포트", "교외체험학습 통계", 
-               "생리인정결석 체크", "장기결석 경고 관리", "증빙서류 체크리스트", 
-               "주간 요약 & 달력"].index(st.session_state['menu']),
+        menu_options,
+        index=menu_options.index(st.session_state['menu']),
         key='_menu_selection',
         on_change=on_menu_change
     )
     
     st.markdown("---")
     
-    # [기능 개선 4] 연단위 일괄 선택
+    # 연단위 일괄 선택
     st.write("📅 **분석 대상 월 선택**")
     all_months = getattr(data_loader, 'ACADEMIC_MONTHS', [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2])
     
@@ -201,7 +206,7 @@ if current_menu == "대시보드(Home)":
     row1_1, row1_2, row1_3 = st.columns(3)
     row2_1, row2_2, row2_3 = st.columns(3)
     
-    # [수정] on_click 콜백을 사용하여 페이지 이동 처리
+    # on_click 콜백을 사용하여 안전하게 페이지 이동
     row1_1.button("📑 월별/학급별 리포트", use_container_width=True, type="primary", 
                   on_click=set_page, args=("월별/학급별 리포트",))
     
@@ -297,5 +302,6 @@ elif current_menu == "주간 요약 & 달력":
                         display_html_report(path_weekly)
                     
                     with sub_tab2:
-                        path_calendar = os.path.join(REPORTS_DIR, "calendar", f"{m:02d}_생활기록_달력.html")
+                        # 🚨 [수정 완료] 오타 수정: {m:02d} -> {m:02d}월 (월 글자가 빠져있었음)
+                        path_calendar = os.path.join(REPORTS_DIR, "calendar", f"{m:02d}월_생활기록_달력.html")
                         display_html_report(path_calendar)
