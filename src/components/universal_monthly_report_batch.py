@@ -34,7 +34,8 @@ def calculate_school_days(year, month):
         if curr.weekday() < 5 and curr not in HOLIDAYS_KR:
             days.append(curr)
         curr += datetime.timedelta(days=1)
-    return days  # ✅ 들여쓰기 수정 완료
+    
+    return days # ✅ [수정됨] 들여쓰기 교정 완료 (함수 내부로 이동)
 
 # =========================================================
 # 1. 월별 세부 리포트 (monthly_detail.html)
@@ -48,6 +49,7 @@ def create_monthly_html(events, master_roster, school_days, month, year, output_
         if e['num'] not in master_roster:
             continue
             
+        # 인정 결석 등은 세부 리포트에는 표시하되, 필수 확인 대상(is_req)에서는 제외할 수도 있음
         is_req = ("결석" in e['raw_type'] or "인정" in e['raw_type']) and not e['is_unexcused']
         processed_events.append({
             'is_req': is_req,
@@ -73,6 +75,8 @@ def create_class_html(events, master_roster, school_days, month, year, output_pa
     all_nums = [n for n in all_nums if n < 100]
 
     # 데이터 초기화
+    # abs(결석), lat(지각), ear(조퇴), res(결과)
+    # 각 리스트는 [질병, 미인정, 기타, 인정] 순서로 저장됨 (인덱스 0~3)
     stats = {}
     for n in all_nums:
         name = master_roster.get(n, "")
@@ -86,12 +90,12 @@ def create_class_html(events, master_roster, school_days, month, year, output_pa
             
             t = e['raw_type']
             
-            # 카테고리 분류
+            # 카테고리 분류 (질병=0, 미인정=1, 기타=2, 인정=3)
             cat = 0 
-            if e['is_unexcused']: cat = 1 
-            elif "인정" in t: cat = 3     
-            elif "기타" in t: cat = 2     
-            else: cat = 0                 
+            if e['is_unexcused']: cat = 1     # 미인정
+            elif "인정" in t: cat = 3         # 인정
+            elif "기타" in t: cat = 2         # 기타
+            else: cat = 0                     # 질병 (기본값)
             
             k = None
             if "결석" in t: k = 'abs'
@@ -118,17 +122,17 @@ def create_class_html(events, master_roster, school_days, month, year, output_pa
         totals = {'abs':[], 'lat':[], 'ear':[], 'res':[]}
         categories = ['abs', 'lat', 'ear', 'res']
         
-        # 상세 셀
+        # 상세 셀 (질병, 미인정, 기타, 인정 순서)
         for k in categories:
             val_lists = s[k]
-            for i in range(4): 
+            for i in range(4): # 0:질병, 1:미인정, 2:기타, 3:인정
                 dates = val_lists[i]
                 count = len(dates)
                 
                 classes = []
-                if i == 3: classes.append("thick-right")
+                if i == 3: classes.append("thick-right") # 인정 칸 오른쪽 굵은 선
                 if count > 0: classes.append("highlight")
-                if i == 1 and count > 0: classes.append("unexcused")
+                if i == 1 and count > 0: classes.append("unexcused") # 미인정 빨간색
 
                 tooltip = "\n".join(dates) if count > 0 else ""
                 
@@ -138,17 +142,19 @@ def create_class_html(events, master_roster, school_days, month, year, output_pa
                     'tooltip': tooltip
                 })
                 
-                # 🚨 [수정] 인정(cat=3)은 총계에서 제외
+                # 🚨 [수정된 핵심 로직]
+                # 총계(totals)에는 '인정(cat=3)'을 제외하고 '질병(0), 미인정(1), 기타(2)'만 합산합니다.
                 if i != 3: 
                     totals[k].extend(dates)
         
-        # 총계 셀
+        # 총계 셀 (합계 계산)
         for k in categories:
             all_dates = sorted(totals[k])
             t_count = len(all_dates)
             tooltip = "\n".join(all_dates) if t_count > 0 else ""
+            
             row_data['totals'].append({
-                'count': t_count,
+                'count': t_count, 
                 'classes': "highlight-total" if t_count > 0 else "",
                 'tooltip': tooltip
             })
