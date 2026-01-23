@@ -34,7 +34,7 @@ def calculate_school_days(year, month):
         if curr.weekday() < 5 and curr not in HOLIDAYS_KR:
             days.append(curr)
         curr += datetime.timedelta(days=1)
-    return days
+    return days  # ✅ 들여쓰기 수정 완료
 
 # =========================================================
 # 1. 월별 세부 리포트 (monthly_detail.html)
@@ -85,6 +85,9 @@ def create_class_html(events, master_roster, school_days, month, year, output_pa
                 continue
             
             t = e['raw_type']
+            
+            # 카테고리 분류
+            cat = 0 
             if e['is_unexcused']: cat = 1 
             elif "인정" in t: cat = 3     
             elif "기타" in t: cat = 2     
@@ -130,11 +133,14 @@ def create_class_html(events, master_roster, school_days, month, year, output_pa
                 tooltip = "\n".join(dates) if count > 0 else ""
                 
                 row_data['cells'].append({
-                    'count': count,  # 🚨 [수정] 여기서 "."로 바꾸지 않고 정수 그대로 보냅니다!
+                    'count': count,
                     'classes': " ".join(classes),
                     'tooltip': tooltip
                 })
-                totals[k].extend(dates)
+                
+                # 🚨 [수정] 인정(cat=3)은 총계에서 제외
+                if i != 3: 
+                    totals[k].extend(dates)
         
         # 총계 셀
         for k in categories:
@@ -142,7 +148,7 @@ def create_class_html(events, master_roster, school_days, month, year, output_pa
             t_count = len(all_dates)
             tooltip = "\n".join(all_dates) if t_count > 0 else ""
             row_data['totals'].append({
-                'count': t_count, # 🚨 [수정] 정수 그대로
+                'count': t_count,
                 'classes': "highlight-total" if t_count > 0 else "",
                 'tooltip': tooltip
             })
