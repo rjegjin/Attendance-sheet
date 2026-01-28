@@ -40,6 +40,7 @@ try:
     from src.services import data_loader
     from src.services import config_manager
     from src.services import admin_manager
+    from src.services import universal_notification # [New] 알림 서비스 추가
     from src.paths import REPORTS_DIR, CACHE_DIR
     
     from src.components import universal_monthly_report_batch as monthly_gen
@@ -49,6 +50,7 @@ try:
     from src.components import generate_checklist as checklist_gen
     from src.components import universal_weekly_summary_batch as weekly_gen
     from src.components import universal_calendar_batch as calendar_gen
+    from src.components import daily_alert_system as daily_bot
     
     # 인덱스 생성기 (선택 사항)
     try:
@@ -102,10 +104,9 @@ def display_html_report(file_path, height=800):
         
         st.components.v1.html(html, height=height, scrolling=True)
     else:
-        # 파일이 없을 때 경로를 보여주어 디버깅 도움
-        st.info(f"ℹ️ 아직 생성된 리포트가 없습니다.\n(경로: {os.path.basename(file_path)})")
+        st.info(f"ℹ️ 리포트가 없습니다.\n(경로: {os.path.basename(file_path)})")
 
-# [수정된 함수] 버튼 클릭 콜백으로 사용 (상태 충돌 방지)
+# 버튼 클릭 콜백
 def set_page(page_name):
     st.session_state['menu'] = page_name
 
@@ -120,11 +121,18 @@ with st.sidebar:
     def on_menu_change():
         st.session_state['menu'] = st.session_state._menu_selection
 
-    menu_options = ["대시보드(Home)", "월별/학급별 리포트", "교외체험학습 통계", 
-                    "생리인정결석 체크", "장기결석 경고 관리", "증빙서류 체크리스트", 
-                    "주간 요약 & 달력"]
+    # [New] '🔔 알림 센터' 메뉴 추가
+    menu_options = [
+        "대시보드(Home)", 
+        "🔔 알림 센터",
+        "월별/학급별 리포트", 
+        "교외체험학습 통계", 
+        "생리인정결석 체크", 
+        "장기결석 경고 관리", 
+        "증빙서류 체크리스트", 
+        "주간 요약 & 달력"
+    ]
     
-    # 현재 상태가 옵션에 없으면 기본값으로 복귀 (안전장치)
     if st.session_state['menu'] not in menu_options:
         st.session_state['menu'] = menu_options[0]
 
@@ -189,7 +197,6 @@ with st.sidebar:
 # 6. MAIN CONTENT
 # --------------------------------------------------------------------------
 
-# 현재 메뉴 상태에 따라 화면 표시
 current_menu = st.session_state['menu']
 
 if current_menu == "대시보드(Home)":
@@ -206,7 +213,6 @@ if current_menu == "대시보드(Home)":
     row1_1, row1_2, row1_3 = st.columns(3)
     row2_1, row2_2, row2_3 = st.columns(3)
     
-    # on_click 콜백을 사용하여 안전하게 페이지 이동
     row1_1.button("📑 월별/학급별 리포트", use_container_width=True, type="primary", 
                   on_click=set_page, args=("월별/학급별 리포트",))
     
@@ -222,8 +228,60 @@ if current_menu == "대시보드(Home)":
     row2_2.button("✅ 증빙서류 체크리스트", use_container_width=True, 
                   on_click=set_page, args=("증빙서류 체크리스트",))
         
-    row2_3.button("📅 주간 요약 & 달력", use_container_width=True, 
-                  on_click=set_page, args=("주간 요약 & 달력",))
+    # [New] 알림 센터 버튼 추가 (기존 달력 버튼 옆)
+    if row2_3.button("🔔 알림 발송 센터", use_container_width=True):
+        set_page("🔔 알림 센터")
+        st.rerun()
+
+# --------------------------------------------------------------------------
+# [New] 알림 발송 센터
+# --------------------------------------------------------------------------
+elif current_menu == "🔔 알림 센터":
+    st.subheader("🔔 텔레그램 알림 발송 센터")
+    st.info("텔레그램 봇을 통해 공지사항을 전송하거나, 매일 아침 브리핑을 수동으로 실행합니다.")
+    
+    # 1. 봇 상태 확인
+    token, chat_id = universal_notification.get_telegram_config()
+    if not token or not chat_id:
+        st.error("⚠️ 텔레그램 봇 설정이 되어있지 않습니다. (.env 또는 Secrets 확인)")
+    else:
+        st.success(f"✅ 봇 연결됨 (Chat ID: {chat_id})")
+
+        tab1, tab2 = st.tabs(["📨 직접 메시지 전송", "🤖 자동 알림 수동 실행"])
+
+        # 탭 1: 직접 메시지 보내기
+        with tab1:
+            with st.container(border=True):
+                st.write("**메시지 작성**")
+                
+                # 상용구 버튼
+                col_tags = st.columns(5)
+                if col_tags[0].button("[공지]"): st.session_state['msg_input'] = "[공지] " + st.session_state.get('msg_input', '')
+                if col_tags[1].button("[긴급]"): st.session_state['msg_input'] = "[긴급] " + st.session_state.get('msg_input', '')
+                
+                message = st.text_area("내용을 입력하세요", height=150, key='msg_input')
+                
+                if st.button("🚀 전송하기", type="primary"):
+                    if not message.strip():
+                        st.warning("내용을 입력해주세요.")
+                    else:
+                        with st.spinner("전송 중..."):
+                            success = universal_notification.send_alert(message)
+                            if success:
+                                st.toast("메시지가 전송되었습니다!", icon="✅")
+                            else:
+                                st.error("전송에 실패했습니다. 로그를 확인하세요.")
+
+        # 탭 2: 데일리 브리핑 실행
+        with tab2:
+            st.write("### 🌅 오늘 아침 브리핑")
+            st.write("매일 아침 8시 30분에 발송되는 **출결/생일/미제출 서류 요약**을 지금 즉시 발송합니다.")
+            
+            if st.button("▶️ 브리핑 즉시 실행"):
+                with st.spinner("데이터 분석 및 브리핑 작성 중..."):
+                    # daily_bot 내부 함수 호출
+                    daily_bot.run_daily_checks() 
+                st.success("브리핑 발송이 완료되었습니다.")
 
 elif current_menu == "월별/학급별 리포트":
     st.subheader(f"📑 {CURRENT_YEAR}학년도 월별/학급별 리포트")
@@ -302,6 +360,5 @@ elif current_menu == "주간 요약 & 달력":
                         display_html_report(path_weekly)
                     
                     with sub_tab2:
-                        # 🚨 [수정 완료] 오타 수정: {m:02d} -> {m:02d}월 (월 글자가 빠져있었음)
                         path_calendar = os.path.join(REPORTS_DIR, "calendar", f"{m:02d}월_생활기록_달력.html")
                         display_html_report(path_calendar)
