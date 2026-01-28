@@ -5,7 +5,7 @@ import sys
 # [수리] 나침반 가져오기 (절대 경로로 .env 찾기 위함)
 from src.paths import ROOT_DIR
 
-# ✅ [New] 설정 관리자 연동
+# ✅ 설정 관리자 연동
 try:
     from src.services.config_manager import GLOBAL_CONFIG
 except ImportError:
@@ -14,16 +14,14 @@ except ImportError:
 # [중요] 로컬 .env 로딩을 위한 라이브러리
 try:
     from dotenv import load_dotenv
-    # [수리] 루트 경로의 .env 파일을 명시적으로 지정하여 로드
     load_dotenv(dotenv_path=ROOT_DIR / ".env")
 except ImportError:
-    # Streamlit Cloud에는 python-dotenv가 없을 수도 있으니 패스
     pass
 
 def get_telegram_config():
     """
     환경에 따라 적절한 키 값을 찾아 반환하는 함수
-    우선순위: 1. Streamlit Secrets (클라우드) -> 2. config.json -> 3. os.getenv (로컬 .env)
+    우선순위: 1. Streamlit Secrets -> 2. config.json -> 3. 로컬 .env
     """
     bot_token = None
     chat_id = None
@@ -31,24 +29,27 @@ def get_telegram_config():
     # 1. Streamlit Cloud Secrets 확인 시도
     try:
         import streamlit as st
-        # Cloud 환경인지 확인 (secrets 속성이 있는지)
         if hasattr(st, "secrets"):
-            # secrets.toml에 정의된 키 이름으로 접근
+            #Case A: 헤더 없이 바로 있는 경우 (TELEGRAM_TOKEN = "...")
             bot_token = st.secrets.get("TELEGRAM_TOKEN")
             chat_id = st.secrets.get("TELEGRAM_CHAT_ID")
+            
+            #Case B: [telegram] 섹션 아래에 있는 경우 (선생님의 설정 상황)
+            if not bot_token and "telegram" in st.secrets:
+                bot_token = st.secrets["telegram"].get("TELEGRAM_TOKEN")
+                chat_id = st.secrets["telegram"].get("TELEGRAM_CHAT_ID")
     except Exception:
-        pass # 로컬 환경이거나 streamlit 모듈 에러 시 무시
+        pass 
 
-    # 2. config.json 확인 (차선책)
+    # 2. config.json 확인
     if not bot_token:
         bot_token = GLOBAL_CONFIG.get("telegram_token")
     if not chat_id:
         chat_id = GLOBAL_CONFIG.get("telegram_chat_id")
 
-    # 3. 로컬 환경 변수(.env) 확인 (Secrets에서 못 찾았을 경우)
+    # 3. 로컬 환경 변수(.env) 확인
     if not bot_token:
         bot_token = os.getenv("TELEGRAM_TOKEN")
-    
     if not chat_id:
         chat_id = os.getenv("TELEGRAM_CHAT_ID")
 
@@ -65,15 +66,12 @@ def send_alert(msg):
     """
     global BOT_TOKEN, CHAT_ID
     
-    # 실행 시점에 토큰이 없으면 다시 한 번 로드 시도 (안전장치)
     if not BOT_TOKEN:
         BOT_TOKEN, CHAT_ID = get_telegram_config()
 
     if not BOT_TOKEN or not CHAT_ID:
-        # 키가 없으면 조용히 실패 (로그만 남김)
         return False
     
-    # [Config] 학교 이름을 메시지에 추가
     school_name = GLOBAL_CONFIG.get("school_name", "")
     if school_name:
         msg = f"<b>[{school_name}]</b>\n{msg}"
@@ -87,14 +85,18 @@ def send_alert(msg):
 
     try:
         response = requests.post(url, json=payload, timeout=5)
-        if response.status_code == 200:
-            return True
-        else:
-            print(f"❌ [Telegram] 전송 거부 ({response.status_code}): {response.text}")
-            return False
+        return response.status_code == 200
     except Exception as e:
         print(f"❌ [Telegram] 연결 오류: {e}")
         return False
+
+if __name__ == "__main__":
+    token, cid = get_telegram_config()
+    if token and cid:
+        print(f"✅ 설정 확인 완료! (ChatID: {cid})")
+        send_alert("🔔 시스템 설정 테스트 메시지입니다.")
+    else:
+        print("❌ 설정을 찾을 수 없습니다.")
 
 # ==========================================
 # ID 확인용 유틸리티 (직접 실행 시)
