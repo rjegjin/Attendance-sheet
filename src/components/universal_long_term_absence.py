@@ -1,17 +1,23 @@
 import os
 import datetime
 from jinja2 import Environment, FileSystemLoader
+
+# [Import] 데이터 로더 및 유틸리티
 from src.services.data_loader import (
     load_all_events, 
     get_master_roster, 
     ACADEMIC_MONTHS, 
-    check_gap_is_holiday  # [필수] 연속성 판단을 위해 가져옴
+    check_gap_is_holiday  # 연속성 판단용 함수
 )
 from src.paths import REPORTS_DIR, SRC_DIR
+
+# [Import] 방금 생성한 알림 모듈
 import src.components.universal_notification as bot
 
 OUTPUT_DIR = os.path.join(str(REPORTS_DIR), "stats")
 TEMPLATE_DIR = os.path.join(str(SRC_DIR), "templates")
+
+# 안전장치: 폴더 생성
 if not os.path.exists(OUTPUT_DIR): os.makedirs(OUTPUT_DIR, exist_ok=True)
 if not os.path.exists(TEMPLATE_DIR): os.makedirs(TEMPLATE_DIR, exist_ok=True)
 
@@ -27,6 +33,7 @@ THRESHOLD_L4 = 50
 LIMIT_CONSECUTIVE = 10 
 
 def get_status_info(count):
+    """누적 일수에 따른 상태 메시지와 색상을 반환"""
     if count >= THRESHOLD_L4: return "🛑 3차 독촉 (정원외)", "bg-black", 100
     elif count >= THRESHOLD_L3: return "🚨 내교통지서", "bg-red", 90
     elif count >= THRESHOLD_L2: return "🟧 2차 독촉", "bg-orange", 80
@@ -50,20 +57,26 @@ def calculate_max_consecutive(dates):
         nxt = dates[i]
         delta = (nxt - curr_end).days
         
-        # 1. 바로 다음 날이거나 2. 사이가 모두 휴일이면 연속으로 간주
+        # 1. 바로 다음 날이거나 (delta=1)
+        # 2. 날짜 차이가 나더라도 그 사이가 모두 휴일/주말인 경우 (check_gap_is_holiday)
         is_connected = (delta == 1) or (delta > 1 and check_gap_is_holiday(curr_end, nxt))
         
         if is_connected:
             curr_end = nxt
             current_streak_days = (curr_end - start_date).days + 1
         else:
+            # 끊김 -> 기록 저장 및 초기화
             if current_streak_days >= LIMIT_CONSECUTIVE:
                 long_periods.append((start_date, curr_end, current_streak_days))
+            
             max_streak_days = max(max_streak_days, current_streak_days)
+            
+            # 초기화
             start_date = nxt
             curr_end = nxt
             current_streak_days = 1
             
+    # 마지막 구간 체크
     if current_streak_days >= LIMIT_CONSECUTIVE:
         long_periods.append((start_date, curr_end, current_streak_days))
     max_streak_days = max(max_streak_days, current_streak_days)
@@ -71,7 +84,7 @@ def calculate_max_consecutive(dates):
     return max_streak_days, long_periods
 
 def analyze_long_term_absence(roster):
-    # [1] 명렬표 기준 초기화 (날짜 객체를 담을 raw_dates 추가)
+    # [1] 명렬표 기준 초기화 (raw_dates 추가)
     stats = {num: {'name': name, 'count': 0, 'details': [], 'raw_dates': []} for num, name in roster.items()}
     
     print("   📉 [분석] 장기결석 위험군 스캔 중...")
@@ -82,7 +95,7 @@ def analyze_long_term_absence(roster):
             # 명렬표에 없는 번호 무시
             if e['num'] not in stats: continue
 
-            # 결석(질병, 미인정, 기타)만 카운트
+            # 결석(질병, 미인정, 기타)만 카운트 (인정결석 제외)
             if "결석" in e['raw_type'] and "인정" not in e['raw_type']:
                 stats[e['num']]['count'] += 1
                 stats[e['num']]['details'].append(f"{e['date'].strftime('%m.%d')}({e['raw_type'][:2]})")
@@ -106,7 +119,7 @@ def analyze_long_term_absence(roster):
         # 기본 상태 메시지
         msg, color_class, pct = get_status_info(count)
         
-        # [New] 연속 결석 분석
+        # [New] 연속 결석 여부 판별
         max_cons, long_periods = calculate_max_consecutive(data['raw_dates'])
         is_long_streak = (max_cons >= LIMIT_CONSECUTIVE)
         
@@ -118,11 +131,15 @@ def analyze_long_term_absence(roster):
             period_str = ", ".join([f"{s.strftime('%m.%d')}~{e.strftime('%m.%d')}" for s, e, d in long_periods])
             alerts.append(f"🚨 {data['name']}: 연속 {max_cons}일 결석! ({period_str})")
             
-            # 리포트 표시용 메시지 수정
+            # 리포트 표시용 메시지 업데이트 및 색상 격상
             msg += f" / 🚨연속 {max_cons}일"
-            # 연속 결석이 있으면 색상을 경고색(오렌지 이상)으로 강제 상향
             if color_class == "bg-green": 
                 color_class = "bg-orange"
+                bar_color = color_map["bg-orange"]
+            else:
+                bar_color = color_map[color_class]
+        else:
+            bar_color = color_map[color_class]
         
         rows.append({
             'num': num,
@@ -130,7 +147,7 @@ def analyze_long_term_absence(roster):
             'count': count,
             'msg': msg,
             'color_class': color_class,
-            'bar_color': color_map[color_class],
+            'bar_color': bar_color,
             'pct': min(pct, 100),
             'details': ", ".join(data['details'])
         })
