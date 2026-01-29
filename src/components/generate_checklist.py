@@ -122,24 +122,30 @@ def generate_html(grouped_events, month, year, output_path):
         print(f"❌ [HTML 생성 오류] {e}")
 
 # =========================================================
-# [핵심] 필터링 로직
+# [핵심] 필터링 로직 수정됨
 # =========================================================
 def filter_checklist_events(events):
     """
     증빙서류 제출 대상만 남기는 필터링 함수
-    1. 미인정(무단) -> 제외
-    2. 질병조퇴 -> 제외
-    3. 그 외 (결석, 지각, 결과, 인정조퇴 등) -> 포함
+    1. 미인정(무단) 전체 -> 제외
+    2. 질병으로 인한 지각/조퇴/결과 -> 제외 (단, 질병'결석'은 유지)
+    3. 그 외 (인정결석, 기타결석 등) -> 포함
     """
     targets = []
+    
+    # 제외할 질병 관련 키워드 (부분 출결)
+    exclude_keywords = ["질병지각", "질병조퇴", "질병결과"]
+
     for e in events:
         # [조건 1] 미인정(Unexcused) 제외
         if e.get('is_unexcused', False):
             continue
             
-        # [조건 2] 질병조퇴 제외
         raw_type = e.get('raw_type', '')
-        if "질병조퇴" in raw_type:
+
+        # [조건 2] 질병 지각/조퇴/결과 제외
+        # any()를 사용하여 제외 키워드가 하나라도 포함되면 건너뜀
+        if any(keyword in raw_type for keyword in exclude_keywords):
             continue
             
         targets.append(e)
