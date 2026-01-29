@@ -11,7 +11,7 @@ from src.services.data_loader import (
 )
 from src.paths import REPORTS_DIR, SRC_DIR
 
-# 🚨 [경로 수정 완료] 알림 모듈을 services에서 가져옵니다.
+# [Import] 알림 모듈
 import src.services.universal_notification as bot
 
 OUTPUT_DIR = os.path.join(str(REPORTS_DIR), "stats")
@@ -29,8 +29,10 @@ THRESHOLD_L2 = 40
 THRESHOLD_L3 = 45
 THRESHOLD_L4 = 50
 
-# [설정] 연속 결석 위험 기준 (주말/휴일 포함)
-LIMIT_CONSECUTIVE = 10 
+# [설정] 연속 결석 위험 기준 (수업일수 기준)
+# 예: 주말 포함 10일간 결석했어도, 수업일수가 7일이면 7일로 카운트됩니다.
+# 교육청 지침에 따라 7일 또는 10일 등으로 조정하세요.
+LIMIT_CONSECUTIVE = 7 
 
 def get_status_info(count):
     """누적 일수에 따른 상태 메시지와 색상을 반환"""
@@ -42,49 +44,55 @@ def get_status_info(count):
 
 def calculate_max_consecutive(dates):
     """
-    결석 날짜 리스트를 받아, 주말/공휴일을 포함한 최대 연속 결석 일수를 계산합니다.
+    결석 날짜 리스트를 받아, 주말/공휴일을 건너뛰며 연결된 '실제 결석 일수'를 계산합니다.
     """
     if not dates: return 0, []
     
     dates = sorted(list(set(dates)))
-    max_streak_days = 1
-    current_streak_days = 1
-    start_date = dates[0]
-    curr_end = dates[0]
-    long_periods = [] 
+    long_periods = []
+    
+    # 연속 구간 추적용 변수
+    streak_start = dates[0]
+    streak_end = dates[0]
+    streak_count = 1  # 실제 결석 횟수 (1일부터 시작)
+    
+    max_streak = 1
     
     for i in range(1, len(dates)):
+        curr = dates[i-1]
         nxt = dates[i]
-        delta = (nxt - curr_end).days
+        delta = (nxt - curr).days
         
+        # [연속성 판단] 
         # 1. 바로 다음 날이거나 (delta=1)
-        # 2. 날짜 차이가 나더라도 그 사이가 모두 휴일/주말인 경우 (check_gap_is_holiday)
-        is_connected = (delta == 1) or (delta > 1 and check_gap_is_holiday(curr_end, nxt))
+        # 2. 날짜 차이가 나더라도 그 사이가 모두 휴일/주말인 경우
+        is_connected = (delta == 1) or (delta > 1 and check_gap_is_holiday(curr, nxt))
         
         if is_connected:
-            curr_end = nxt
-            current_streak_days = (curr_end - start_date).days + 1
+            # 연속됨: 끝 날짜 갱신 & 카운트 1 증가 (날짜 차이가 아님!)
+            streak_end = nxt
+            streak_count += 1
         else:
-            # 끊김 -> 기록 저장 (기준 넘으면)
-            if current_streak_days >= LIMIT_CONSECUTIVE:
-                long_periods.append((start_date, curr_end, current_streak_days))
+            # 끊김: 현재까지의 구간 저장 (기준 넘으면)
+            if streak_count >= LIMIT_CONSECUTIVE:
+                long_periods.append((streak_start, streak_end, streak_count))
             
-            max_streak_days = max(max_streak_days, current_streak_days)
+            max_streak = max(max_streak, streak_count)
             
-            # 초기화
-            start_date = nxt
-            curr_end = nxt
-            current_streak_days = 1
+            # 초기화 (새로운 구간 시작)
+            streak_start = nxt
+            streak_end = nxt
+            streak_count = 1
             
     # 마지막 구간 체크
-    if current_streak_days >= LIMIT_CONSECUTIVE:
-        long_periods.append((start_date, curr_end, current_streak_days))
-    max_streak_days = max(max_streak_days, current_streak_days)
+    if streak_count >= LIMIT_CONSECUTIVE:
+        long_periods.append((streak_start, streak_end, streak_count))
+    max_streak = max(max_streak, streak_count)
     
-    return max_streak_days, long_periods
+    return max_streak, long_periods
 
 def analyze_long_term_absence(roster):
-    # [1] 명렬표 기준 초기화 (raw_dates 추가: 연속성 계산용)
+    # [1] 명렬표 기준 초기화
     stats = {num: {'name': name, 'count': 0, 'details': [], 'raw_dates': []} for num, name in roster.items()}
     
     print("   📉 [분석] 장기결석 위험군 스캔 중...")
@@ -92,7 +100,6 @@ def analyze_long_term_absence(roster):
     for month in ACADEMIC_MONTHS:
         events = load_all_events(None, month, roster)
         for e in events:
-            # 명렬표에 없는 번호 무시 (KeyError 방지)
             if e['num'] not in stats: continue
 
             # 결석(질병, 미인정, 기타)만 카운트 (인정결석 제외)
@@ -115,14 +122,13 @@ def analyze_long_term_absence(roster):
     for num, data in sorted_stats:
         count = data['count']
         
-        # [New] 연속 결석 여부 판별
+        # [New] 연속 결석 분석 (수업일수 기준)
         max_cons, long_periods = calculate_max_consecutive(data['raw_dates'])
         is_long_streak = (max_cons >= LIMIT_CONSECUTIVE)
         
-        # 결석 0일인 학생 처리 (옵션: 연속결석도 없으면 제외)
+        # 결석 0일인 학생 처리 (연속결석도 없으면 제외)
         if count == 0 and not is_long_streak: continue 
         
-        # 기본 누적일수 기반 상태
         msg, color_class, pct = get_status_info(count)
         bar_color = color_map[color_class]
 
@@ -131,13 +137,13 @@ def analyze_long_term_absence(roster):
             alerts.append(f"{data['name']}(누적 {count}일): {msg}")
             
         if is_long_streak:
-            period_str = ", ".join([f"{s.strftime('%m.%d')}~{e.strftime('%m.%d')}" for s, e, d in long_periods])
-            alerts.append(f"🚨 {data['name']}: 연속 {max_cons}일 결석! ({period_str})")
+            # 기간 문자열 생성 (예: "08.27~09.05(8일)")
+            period_str = ", ".join([f"{s.strftime('%m.%d')}~{e.strftime('%m.%d')}({d}일)" for s, e, d in long_periods])
+            alerts.append(f"🚨 {data['name']}: 연속 {max_cons}일 결석! [{period_str}]")
             
-            # 리포트 표시용 메시지 업데이트
             msg += f" / 🚨연속 {max_cons}일"
             
-            # 연속 결석이 발견되면 색상/중요도를 최소 '주황색(경고)' 이상으로 격상
+            # 연속 결석 발견 시 색상 격상
             if color_class == "bg-green": 
                 color_class = "bg-orange"
                 bar_color = color_map["bg-orange"]
