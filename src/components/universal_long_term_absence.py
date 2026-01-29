@@ -11,8 +11,8 @@ from src.services.data_loader import (
 )
 from src.paths import REPORTS_DIR, SRC_DIR
 
-# [Import] 방금 생성한 알림 모듈 (경로 명확화)
-import src.components.universal_notification as bot
+# 🚨 [경로 수정 완료] 알림 모듈을 services에서 가져옵니다.
+import src.services.universal_notification as bot
 
 OUTPUT_DIR = os.path.join(str(REPORTS_DIR), "stats")
 TEMPLATE_DIR = os.path.join(str(SRC_DIR), "templates")
@@ -118,7 +118,7 @@ def analyze_long_term_absence(roster):
         # 기본 누적일수 기반 상태
         msg, color_class, pct = get_status_info(count)
         
-        # [New] 연속 결석 분석
+        # [New] 연속 결석 여부 판별
         max_cons, long_periods = calculate_max_consecutive(data['raw_dates'])
         is_long_streak = (max_cons >= LIMIT_CONSECUTIVE)
         
@@ -139,6 +139,11 @@ def analyze_long_term_absence(roster):
             # 연속 결석이 발견되면 색상/중요도를 최소 '주황색(경고)' 이상으로 격상
             if color_class == "bg-green": 
                 color_class = "bg-orange"
+                bar_color = color_map["bg-orange"]
+            else:
+                bar_color = color_map[color_class]
+        else:
+            bar_color = color_map[color_class]
         
         rows.append({
             'num': num,
@@ -146,7 +151,7 @@ def analyze_long_term_absence(roster):
             'count': count,
             'msg': msg,
             'color_class': color_class,
-            'bar_color': color_map[color_class],
+            'bar_color': bar_color,
             'pct': min(pct, 100),
             'details': ", ".join(data['details'])
         })
