@@ -92,7 +92,7 @@ def analyze_long_term_absence(roster):
     for month in ACADEMIC_MONTHS:
         events = load_all_events(None, month, roster)
         for e in events:
-            # 명렬표에 없는 번호 무시
+            # 명렬표에 없는 번호 무시 (KeyError 방지)
             if e['num'] not in stats: continue
 
             # 결석(질병, 미인정, 기타)만 카운트 (인정결석 제외)
@@ -115,15 +115,16 @@ def analyze_long_term_absence(roster):
     for num, data in sorted_stats:
         count = data['count']
         
-        # 기본 누적일수 기반 상태
-        msg, color_class, pct = get_status_info(count)
-        
         # [New] 연속 결석 여부 판별
         max_cons, long_periods = calculate_max_consecutive(data['raw_dates'])
         is_long_streak = (max_cons >= LIMIT_CONSECUTIVE)
         
-        # 결석 0일인 학생 처리 (옵션: 보고 싶으면 주석 해제)
+        # 결석 0일인 학생 처리 (옵션: 연속결석도 없으면 제외)
         if count == 0 and not is_long_streak: continue 
+        
+        # 기본 누적일수 기반 상태
+        msg, color_class, pct = get_status_info(count)
+        bar_color = color_map[color_class]
 
         # 알림 생성 (누적 or 연속)
         if count >= THRESHOLD_L1:
@@ -140,10 +141,6 @@ def analyze_long_term_absence(roster):
             if color_class == "bg-green": 
                 color_class = "bg-orange"
                 bar_color = color_map["bg-orange"]
-            else:
-                bar_color = color_map[color_class]
-        else:
-            bar_color = color_map[color_class]
         
         rows.append({
             'num': num,
