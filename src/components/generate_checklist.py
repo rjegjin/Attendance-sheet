@@ -1,150 +1,88 @@
 import os
-import json
-import glob
-from jinja2 import Environment, FileSystemLoader
+import sys
+
+# 프로젝트 루트 경로 설정 (src/components/ 위치 기준)
+BASE_PATH = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(BASE_PATH)) # components -> src -> root
+sys.path.append(PROJECT_ROOT) 
+
+# [Refactor] Utils 및 서비스 모듈 임포트
+from src.utils.date_calculator import DateCalculator
+from src.utils.template_manager import TemplateManager
+from src.utils.state_manager import StateManager
 import src.services.data_loader as data_loader
 
-BASE_PATH = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(os.path.dirname(BASE_PATH)) 
+# 경로 설정
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "reports", "checklist")
 STATUS_DIR = os.path.join(OUTPUT_DIR, "status")
 
-# 템플릿 폴더 경로 설정
-TEMPLATE_DIR = os.path.join(PROJECT_ROOT, "src", "templates")
-if not os.path.exists(TEMPLATE_DIR): os.makedirs(TEMPLATE_DIR, exist_ok=True)
+# [Refactor] 3대장 도구 초기화
+date_calc = DateCalculator(PROJECT_ROOT)
+tmpl_mgr = TemplateManager(PROJECT_ROOT)
+state_mgr = StateManager(STATUS_DIR)
 
-# Jinja2 환경 설정
-env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
-
-# =========================================================
-# [Master-Detail] 데이터 관리 로직
-# =========================================================
-def get_status_file_path(month, year):
-    if not os.path.exists(STATUS_DIR): os.makedirs(STATUS_DIR, exist_ok=True)
-    return os.path.join(STATUS_DIR, f"checklist_{year}_{month:02d}.json")
-
-def get_total_file_path(year):
-    if not os.path.exists(STATUS_DIR): os.makedirs(STATUS_DIR, exist_ok=True)
-    return os.path.join(STATUS_DIR, f"checklist_{year}_TOTAL.json")
-
-def load_status(month, year):
-    path = get_status_file_path(month, year)
-    if os.path.exists(path):
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except: return {}
-    return {}
-
-def save_status(month, status_data, year):
-    month_path = get_status_file_path(month, year)
-    with open(month_path, "w", encoding="utf-8") as f:
-        json.dump(status_data, f, ensure_ascii=False, indent=4)
-    update_total_status()
-
-def update_total_status():
-    target_year = data_loader.TARGET_YEAR 
-    total_data = {}
-    
-    pattern_sem1 = os.path.join(STATUS_DIR, f"checklist_{target_year}_??.json")
-    files_sem1 = glob.glob(pattern_sem1)
-    
-    pattern_sem2 = os.path.join(STATUS_DIR, f"checklist_{target_year + 1}_0[1-2].json")
-    files_sem2 = glob.glob(pattern_sem2)
-    
-    all_files = [f for f in files_sem1 + files_sem2 if "TOTAL" not in f]
-    
-    for file_path in all_files:
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                month_data = json.load(f)
-                if isinstance(month_data, dict):
-                    total_data.update(month_data)
-        except Exception as e:
-            print(f"⚠️ 통합 중 파일 읽기 오류: {e}")
-            
-    total_path = get_total_file_path(target_year)
-    with open(total_path, "w", encoding="utf-8") as f:
-        json.dump(total_data, f, ensure_ascii=False, indent=4)
-    
-    print(f"   📊 [DB 통합] {target_year}학년도 전체 데이터 갱신 완료 ({len(all_files)}개 파일)")
-
-# =========================================================
-# HTML 생성 로직 (Jinja2 적용)
-# =========================================================
 def generate_html(grouped_events, month, year, output_path):
-    storage_key = f"chk_state_{year}_{month:02d}"
-    
-    # DB 상태 로드
-    current_db_status = load_status(month, year)
+    # 1. 체크 상태 로드 (StateManager 활용)
+    status_filename = f"checklist_{year}_{month:02d}.json"
+    current_db_status = state_mgr.load_json(status_filename, default={})
 
-    # 템플릿에 넘길 데이터 리스트 가공 (ViewModel 생성)
     rows = []
     for i, e in enumerate(grouped_events):
-        # 1. 기간 문자열 생성
+        # 2. 기간 문자열 생성
         p_str = e['start'].strftime("%m.%d")
         if e['start'] != e['end']: 
             p_str += f" ~ {e['end'].strftime('%m.%d')}"
         
-        # 2. 데이터 키 생성 (이름_날짜)
+        # 3. [New] 실제 수업일수 표시 (DateCalculator가 계산해준 real_days 활용)
+        real_days = e.get('real_days', 1)
+        if real_days > 1:
+            p_str += f" <span style='color:#2563eb; font-size:0.9em; font-weight:bold;'>({real_days}일)</span>"
+        
+        # 4. 데이터 키 생성 (저장용)
         key_date_str = e['start'].strftime("%m.%d")
         data_key = f"{e['name']}_{key_date_str}"
         
-        # 3. 완료 여부 확인
-        is_done = current_db_status.get(data_key, False)
-        
         rows.append({
             'idx': i + 1,
-            'rid': f"r{i}",             # HTML ID용
-            'data_key': data_key,       # JS 저장용 키
-            'is_done': is_done,         # 완료 상태
+            'rid': f"r{i}",
+            'data_key': data_key,
+            'is_done': current_db_status.get(data_key, False),
             'period_str': p_str,
             'num': e['num'],
             'name': e['name'],
             'type': e['raw_type'],
-            'time': e['time'],          # 교시 정보
+            'time': e['time'],
             'reason': e['reason']
         })
 
-    # Jinja2 템플릿 로드 및 렌더링
-    try:
-        template = env.get_template("checklist_template.html")
-        html = template.render(
-            year=year,
-            month=month,
-            month_pad=f"{month:02d}", # 파일명 생성용
-            storage_key=storage_key,
-            rows=rows
-        )
-        
-        with open(output_path, "w", encoding="utf-8") as f: f.write(html)
-    except Exception as e:
-        print(f"❌ [HTML 생성 오류] {e}")
+    # 5. HTML 생성 및 저장 (TemplateManager 활용)
+    context = {
+        'year': year,
+        'month': month,
+        'month_pad': f"{month:02d}",
+        'storage_key': f"chk_state_{year}_{month:02d}",
+        'rows': rows
+    }
+    
+    if tmpl_mgr.render_and_save("checklist_template.html", context, output_path):
+        pass 
+    else:
+        print(f"❌ HTML 생성 실패: {output_path}")
 
-# =========================================================
-# [핵심] 필터링 로직 수정됨
-# =========================================================
 def filter_checklist_events(events):
     """
-    증빙서류 제출 대상만 남기는 필터링 함수
-    1. 미인정(무단) 전체 -> 제외
-    2. 질병으로 인한 지각/조퇴/결과 -> 제외 (단, 질병'결석'은 유지)
-    3. 그 외 (인정결석, 기타결석 등) -> 포함
+    체크리스트 표시 대상 필터링
+    1. 미인정(무단) 제외
+    2. 질병지각/조퇴/결과 제외 (질병결석은 포함)
     """
     targets = []
-    
-    # 제외할 질병 관련 키워드 (부분 출결)
     exclude_keywords = ["질병지각", "질병조퇴", "질병결과"]
 
     for e in events:
-        # [조건 1] 미인정(Unexcused) 제외
         if e.get('is_unexcused', False):
             continue
             
         raw_type = e.get('raw_type', '')
-
-        # [조건 2] 질병 지각/조퇴/결과 제외
-        # any()를 사용하여 제외 키워드가 하나라도 포함되면 건너뜀
         if any(keyword in raw_type for keyword in exclude_keywords):
             continue
             
@@ -152,46 +90,32 @@ def filter_checklist_events(events):
     return targets
 
 def run_checklists(target_months=None):
-    if not os.path.exists(STATUS_DIR): os.makedirs(STATUS_DIR, exist_ok=True)
     if target_months is None: target_months = data_loader.ACADEMIC_MONTHS
     
-    print(f"=== 증빙서류 체크리스트 생성 (대상: {target_months}) ===")
+    print(f"=== 증빙서류 체크리스트 생성 (Phase 2 Refactored) ===")
     roster = data_loader.get_master_roster()
     
     for month in target_months:
         year = data_loader.TARGET_YEAR + 1 if month < 3 else data_loader.TARGET_YEAR
         
-        # 1. 전체 데이터 로드
+        # 1. 데이터 로드 (Raw Data: 'date' 키 가짐)
         all_events = data_loader.load_all_events(None, month, roster)
         
-        # 2. [필터링 적용]
+        # 2. 필터링
         filtered_events = filter_checklist_events(all_events)
         
-        # 3. 연속된 날짜 그룹화
-        grouped = data_loader.group_consecutive_events(filtered_events)
+        # 3. [핵심] 스마트 그룹화 (DateCalculator 활용)
+        # Raw Data가 들어와도 내부에서 'start/end'로 변환 후 처리함
+        grouped = date_calc.group_consecutive_events(filtered_events)
         
-        # [정렬 규칙] 날짜(start) 오름차순 -> 번호(num) 오름차순
+        # 정렬: 날짜순 -> 번호순
         grouped.sort(key=lambda x: (x['start'], x['num']))
         
+        # 파일 생성
         out_file = os.path.join(OUTPUT_DIR, f"{month:02d}월_증빙서류_체크리스트.html")
         generate_html(grouped, month, year, out_file)
-        print(f"   -> {year}년 {month}월 완료 ({len(grouped)}건 / 원본 {len(all_events)}건)")
-
-# =========================================================
-# 외부 호출용 도우미 함수
-# =========================================================
-def mark_submitted_manually(name, date_str):
-    try:
-        m, d = map(int, date_str.split('.'))
-        year = data_loader.TARGET_YEAR + 1 if m < 3 else data_loader.TARGET_YEAR
         
-        key = f"{name}_{m:02d}.{d:02d}"
-        current = load_status(m, year)
-        current[key] = True
-        save_status(m, current, year)
-        return True, f"{year}년 {m}월 데이터에 반영되었습니다."
-    except Exception as e:
-        return False, str(e)
+        print(f"   -> {year}년 {month}월 완료 ({len(grouped)}건)")
 
 if __name__ == "__main__":
     run_checklists()
