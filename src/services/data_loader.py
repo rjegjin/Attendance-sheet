@@ -18,6 +18,12 @@ from src.paths import (
     ensure_directories
 )
 
+# ✅ [Refactor] Utils 모듈 임포트 (추가됨)
+try:
+    from src.utils.date_calculator import DateCalculator
+except ImportError:
+    print("⚠️ [DataLoader] DateCalculator를 임포트할 수 없습니다. 경로를 확인하세요.")
+
 # ✅ [New] 설정 관리자 연동 (여기서 모든 설정을 가져옴)
 try:
     from src.services.config_manager import GLOBAL_CONFIG
@@ -362,30 +368,20 @@ def sync_all_data_batch(roster, target_months=None):
     except Exception as e:
         print(f"❌ 일괄 다운로드 중 오류 발생: {e}")
 
-def check_gap_is_holiday(start, end):
-    delta = (end - start).days
-    gap_days = [start + datetime.timedelta(days=x) for x in range(1, delta)]
-    return all((d.weekday() in [5, 6] or d in HOLIDAYS_KR) for d in gap_days)
+# [Refactor] Phase 3: 레거시 로직 제거 및 Utils 위임
+# 기존 check_gap_is_holiday 함수는 DateCalculator 내부 로직으로 대체되었으므로 삭제했습니다.
 
 def group_consecutive_events(events):
+    """
+    [Wrapper] 기존 로직을 제거하고, 모든 권한을 src.utils.DateCalculator에게 위임합니다.
+    이제 이 함수를 호출하면 자동으로 휴일 건너뛰기 및 실제 수업일수(real_days)가 계산됩니다.
+    """
     if not events: return []
-    events.sort(key=lambda x: (x['num'], x['date']))
-    grouped = []
-    
-    curr = events[0]; curr_start = curr['date']; curr_end = curr['date']
-    
-    for i in range(1, len(events)):
-        nxt = events[i]
-        delta = (nxt['date'] - curr_end).days
-        
-        is_same = (nxt['num'] == curr['num'] and nxt['raw_type'] == curr['raw_type'])
-        is_conn = (delta == 1) or (delta > 1 and is_same and check_gap_is_holiday(curr_end, nxt['date']))
 
-        if is_same and is_conn:
-            curr_end = nxt['date']
-        else:
-            grouped.append({**curr, 'start': curr_start, 'end': curr_end})
-            curr = nxt; curr_start = nxt['date']; curr_end = nxt['date']
-            
-    grouped.append({**curr, 'start': curr_start, 'end': curr_end})
-    return grouped
+    # 1. 계산기 인스턴스 생성 (ROOT_DIR 전달)
+    # src.paths의 ROOT_DIR은 Path 객체일 수 있으므로 str()로 변환하여 안전하게 전달
+    date_calc = DateCalculator(str(ROOT_DIR))
+    
+    # 2. 작업 위임 (Toss)
+    # DateCalculator가 정렬, 휴일 체크, 그룹화, real_days 계산까지 모두 수행함
+    return date_calc.group_consecutive_events(events)

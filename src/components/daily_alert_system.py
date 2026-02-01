@@ -1,69 +1,90 @@
-# src/components/daily_alert_system.py (통합 완성본)
-
 import os
+import sys
 import datetime
 import gspread
 
-# [수리] 이사 간 모듈들의 주소를 정확히 명시
+# 프로젝트 루트 경로 설정
+BASE_PATH = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(BASE_PATH))
+if PROJECT_ROOT not in sys.path:
+    sys.path.append(PROJECT_ROOT)
+
+# [Import] 서비스 및 데이터 로더
 from src.services import data_loader 
 from src.services import universal_notification as bot
-# [수리] 체크리스트 DB 확인용 모듈 연결 (generate_checklist 대신 checklist_manager 권장)
+# [Import] 체크리스트 매니저 (제출 여부 확인용)
 from src.components import checklist_manager as checklist_db 
+
+# [Import] Utils (DateCalculator)
+try:
+    from src.utils.date_calculator import DateCalculator
+    has_utils = True
+except ImportError:
+    has_utils = False
+    print("⚠️ [Warning] DateCalculator 모듈을 찾을 수 없습니다.")
 
 # [설정] 서류 미제출 독촉 기준일 (5일 경과)
 DOCUMENT_DEADLINE_DAYS = 5
 
+# Utils 인스턴스 초기화
+date_calc = DateCalculator(PROJECT_ROOT) if has_utils else None
+
 def get_today_date():
     return datetime.date.today()
 
-# ==========================================
+# =========================================================
 # 1. 📅 오늘의 출결 브리핑
-# ==========================================
+# =========================================================
 def send_morning_briefing(roster):
     today = get_today_date()
     month = today.month
     
-    # 학기 중이 아니면 스킵
+    # 학기 중이 아니면 스킵 (단, 데이터 로더 설정에 따름)
     if month not in data_loader.ACADEMIC_MONTHS: return
 
     print(f"   ☀️ [브리핑] {today.strftime('%m월 %d일')} 출결 데이터 집계 중...")
     
     # data_loader를 통해 오늘 데이터 로드
-    events = data_loader.load_all_events(None, month, roster)
+    try:
+        events = data_loader.load_all_events(None, month, roster)
+    except Exception:
+        print("      ❌ 데이터 로드 실패")
+        return
+
     today_events = [e for e in events if e['date'] == today]
     
     if not today_events:
         print("      -> 특이사항 없음")
         return
 
-    absent, late, etc = [], [], []
-    for e in today_events:
-        display_type = e['raw_type'].replace('결석','')
-        if e['time']:
-            display_type += f" [{e['time']}]"
-            
-        desc = f"{e['name']}({display_type})"
-        
-        if "결석" in e['raw_type']:
-            absent.append(desc)
-        elif any(x in e['raw_type'] for x in ["지각", "조퇴", "결과"]):
-            late.append(desc)
-        else:
-            etc.append(desc)
+    # 정렬 (번호순)
+    today_events.sort(key=lambda x: x['num'])
 
-    msg = f"☀️ [{today.strftime('%m/%d')} 출결]\n"
-    if absent: msg += f"- 결석({len(absent)}): {', '.join(absent)}\n"
-    if late:   msg += f"- 지조결({len(late)}): {', '.join(late)}\n"
-    if etc:    msg += f"- 기타: {', '.join(etc)}"
+    lines = []
+    for e in today_events:
+        # [강화된 로직] 미인정/무단 결석은 불꽃 아이콘으로 강조
+        is_unexcused = e.get('is_unexcused', False) or "미인정" in e['raw_type'] or "무단" in e['raw_type']
+        icon = "🔥" if is_unexcused else "📝"
+        
+        # 표시할 타입 (결석 글자 제외 등 가공)
+        display_type = e['raw_type'].replace('결석', '').strip()
+        if not display_type: display_type = "결석" # 그냥 '결석'인 경우
+        
+        if e['time']:
+            display_type += f" ({e['time']})"
+            
+        lines.append(f"{icon} {e['name']}({display_type})")
+
+    msg = f"☀️ [{today.strftime('%m/%d')} 출결 현황]\n" + "\n".join(lines)
     
     if bot.send_alert(msg):
         print("      -> 🔔 텔레그램 전송 완료")
     else:
         print("      -> ❌ 전송 실패 (네트워크를 확인하세요)")
 
-# ==========================================
+# =========================================================
 # 2. 🎂 생일 알림 (주간 예보 기능 통합)
-# ==========================================
+# =========================================================
 def send_enhanced_birthday_alert(roster):
     print("   🎂 [생일] 생일자 확인 중...")
     today = get_today_date()
@@ -72,13 +93,17 @@ def send_enhanced_birthday_alert(roster):
     try:
         client = data_loader.get_google_client()
         if not client: return
-        doc = client.open_by_url(data_loader.GOOGLE_SHEET_URL)
-        # [주의] 시트 이름이 '기본정보'가 맞는지 확인 필요 (유연하게 처리 가능)
-        try:
-            worksheet = doc.worksheet("기본정보")
-        except:
-            # 혹시 시트 이름이 다를 경우 대비
-            worksheet = doc.get_worksheet(0)
+        doc = data_loader.get_sheet_instance() # 기존 인스턴스 재사용 권장
+        if not doc:
+             # data_loader에 인스턴스가 없으면 새로 연결 시도 (fallback)
+             doc = client.open_by_url(data_loader.GOOGLE_SHEET_URL)
+
+        # 시트 이름 찾기 ('기본정보' 등)
+        worksheet = None
+        for title in ["기본정보", "명렬표", "학생명단"]:
+            try: worksheet = doc.worksheet(title); break
+            except: pass
+        if not worksheet: worksheet = doc.get_worksheet(0)
             
         rows = worksheet.get_all_values()
     except Exception as e:
@@ -160,9 +185,9 @@ def send_enhanced_birthday_alert(roster):
     for m in msgs:
         bot.send_alert(m)
 
-# ==========================================
+# =========================================================
 # 3. 📑 증빙서류 미제출 독촉 (제출여부 확인 기능 추가)
-# ==========================================
+# =========================================================
 def send_document_reminder(roster):
     print(f"   📑 [서류] 증빙서류 필요 건(결석/인정) {DOCUMENT_DEADLINE_DAYS}일 경과 확인...")
     today = get_today_date()
@@ -173,18 +198,25 @@ def send_document_reminder(roster):
     
     all_events = []
     for month in check_months:
-        all_events.extend(data_loader.load_all_events(None, month, roster))
+        try:
+            events = data_loader.load_all_events(None, month, roster)
+            all_events.extend(events)
+        except: continue
     
+    # [핵심] Phase 3에서 리팩토링된 data_loader.group_consecutive_events 호출
+    # (내부적으로 DateCalculator를 사용하여 휴일은 건너뛰고 묶어줌)
     grouped_events = data_loader.group_consecutive_events(all_events)
     
     alerts = []
     for group in grouped_events:
         raw_type = group['raw_type']
         
-        # 결석, 인정결석 등 증빙이 필요한 건만 필터링 (미인정/무단 제외)
+        # [정책] 미인정/무단은 증빙서류 제출 대상이 아닐 수 있음 -> 제외
+        # 만약 미인정도 독촉해야 한다면 이 조건을 수정하세요.
         if ("미인정" in raw_type) or group.get('is_unexcused', False):
             continue
             
+        # 결석, 인정결석, 기타결석 등 증빙이 필요한 건만 타겟팅
         is_target = ("결석" in raw_type) or ("인정" in raw_type) or ("기타" in raw_type)
         
         if is_target:
@@ -196,19 +228,14 @@ def send_document_reminder(roster):
             delta = (today - start_date).days
             
             if delta >= DOCUMENT_DEADLINE_DAYS:
-                # [핵심] checklist_manager 모듈을 통해 이미 제출했는지 확인
-                # date 객체를 문자열(YYYY-MM-DD)로 변환하거나, DB 키 형식에 맞춰야 함
-                # checklist_manager는 보통 '이름_M.D' 형식을 키로 씀.
-                # 여기서는 checklist_db.is_submitted 인터페이스에 맞게 호출
-                
-                # 날짜 포맷 맞추기 (checklist_manager가 M.D 형식을 쓸 경우)
+                # [체크] checklist_manager 모듈을 통해 이미 제출했는지 확인
                 date_key = start_date.strftime("%m.%d") # "03.05"
-                # 만약 M.D에서 앞 0을 뺀다면(3.5) 로직 조정 필요하지만, 
-                # 보통 checklist_manager는 파일명과 키를 맞춤.
                 
-                if checklist_db.is_submitted(name, date_key):
-                    continue
-
+                # is_submitted 함수가 있다고 가정 (인터페이스 준수)
+                if hasattr(checklist_db, 'is_submitted'):
+                    if checklist_db.is_submitted(name, date_key):
+                        continue
+                
                 period_str = start_date.strftime("%m.%d")
                 if start_date != end_date:
                     period_str += f"~{end_date.strftime('%m.%d')}"
@@ -222,32 +249,44 @@ def send_document_reminder(roster):
     else:
         print("      -> 대상 없음 (모두 제출 완료)")
 
-# ==========================================
-# 실행
-# ==========================================
+# =========================================================
+# 실행 진입점
+# =========================================================
 def run_daily_checks():
     print("\n" + "="*40)
     print(" 🌅 [매일 아침/오후] 출결 종합 브리핑")
     print("="*40)
     
+    # 1. [Phase 4] 휴일/주말 실행 방지
+    # DateCalculator가 있으면 스마트하게 체크, 없으면 주말만 체크
+    if date_calc:
+        if not date_calc.is_school_day(datetime.datetime.now()):
+            print(" 📅 오늘은 휴일(주말/공휴일)입니다. 알림 시스템을 가동하지 않습니다.")
+            return
+    else:
+        if datetime.date.today().weekday() >= 5:
+            print(" 📅 주말입니다. 알림을 건너뜁니다.")
+            return
+
     try:
         roster = data_loader.get_master_roster()
         if not roster:
             print(" ❌ 명렬표를 불러오지 못해 중단합니다.")
             return
 
-        # 1. 출결 브리핑
+        # 2. 출결 브리핑
         send_morning_briefing(roster)
         
-        # 2. 생일 알림 (월요일 주간예보 포함)
+        # 3. 생일 알림 (월요일 주간예보 포함)
         send_enhanced_birthday_alert(roster)
         
-        # 3. 서류 독촉 (제출완료 건 제외)
+        # 4. 서류 독촉 (제출완료 건 제외)
         send_document_reminder(roster)
         
         print("\n ✅ 점검 완료.")
     except Exception as e:
         print(f" ❌ 실행 중 오류 발생: {e}")
+        # import traceback; traceback.print_exc() # 디버깅 시 주석 해제
 
 if __name__ == "__main__":
     run_daily_checks()

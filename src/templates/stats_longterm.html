@@ -31,6 +31,11 @@
         .progress-bg { width: 100%; background: #e9ecef; height: 10px; border-radius: 5px; margin: 10px 0; overflow: hidden; }
         .progress-bar { height: 100%; transition: width 0.5s; }
         
+        .consecutive-box { margin-top: 12px; background-color: #fff5f5; border: 1px solid #feb2b2; border-radius: 6px; padding: 10px; }
+        .consecutive-title { color: #c53030; font-weight: bold; font-size: 0.9em; margin-bottom: 6px; }
+        .consecutive-item { padding: 3px 0; border-bottom: 1px dashed #eee; font-size: 0.9em; }
+        .day-badge { background-color: #fc8181; color: white; padding: 1px 6px; border-radius: 10px; font-size: 0.8em; font-weight: bold; margin-left: 6px; }
+
         .details { font-size: 0.85em; color: #555; margin-top: 8px; line-height: 1.4; }
     </style>
 </head>
@@ -38,6 +43,7 @@
     
     <h2>📉 장기결석(질병/미인정/기타) 관리 리포트</h2>
     <div class="subtitle">기준: {{ limits.l1 }}일(1차) → {{ limits.l2 }}일(2차) → {{ limits.l3 }}일(내교) → {{ limits.l4 }}일(정원외)</div>
+    <div style="text-align:center; font-size:0.85em; color:#666; margin-bottom:20px;">※ 연속 {{ limits.consecutive }}일 이상(수업일 기준, 휴일 제외) 결석 시 상세 구간이 표시됩니다.</div>
     
     <div style="max-width: 800px; margin: 0 auto;">
         {% if not rows %}
@@ -52,7 +58,16 @@
                 <div class="progress-bg">
                     <div class="progress-bar" style="width: {{ row.pct }}%; background-color: {{ row.bar_color }};"></div>
                 </div>
-                <div class="details">📝 상세: {{ row.details }}</div>
+                <div class="details">📝 전체 상세: {{ row.details }}</div>
+
+                {% if row.long_periods %}
+                <div class="consecutive-box">
+                    <div class="consecutive-title">🚨 연속 결석 주의 구간 (수업일수 기준)</div>
+                    {% for p in row.long_periods %}
+                    <div class="consecutive-item">• {{ p.start_str }} ~ {{ p.end_str }} <span class="day-badge">{{ p.days }}일간</span></div>
+                    {% endfor %}
+                </div>
+                {% endif %}
             </div>
             {% endfor %}
         {% endif %}

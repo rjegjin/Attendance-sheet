@@ -1,81 +1,158 @@
-import pandas as pd
-import datetime
 import os
+import sys
+import datetime
+import calendar
 
-# [수정] 필요한 함수와 변수를 '직접' 가져옵니다.
-from src.services.data_loader import (
-    load_all_events, 
-    get_master_roster, 
-    TARGET_YEAR, 
-    ACADEMIC_MONTHS
-)
+# 프로젝트 루트 경로 설정
+BASE_PATH = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(BASE_PATH))
+if PROJECT_ROOT not in sys.path:
+    sys.path.append(PROJECT_ROOT)
+
+# [Import] 데이터 로더 및 경로
+from src.services.data_loader import load_all_events, get_master_roster, TARGET_YEAR, ACADEMIC_MONTHS
 from src.paths import REPORTS_DIR
+
+# [Import] Utils (DateCalculator & TemplateManager)
+try:
+    from src.utils.date_calculator import DateCalculator
+    from src.utils.template_manager import TemplateManager
+    has_utils = True
+except ImportError:
+    has_utils = False
+    print("⚠️ [Warning] Utils 모듈을 찾을 수 없습니다.")
 
 # 경로 설정
 OUTPUT_DIR = os.path.join(str(REPORTS_DIR), "calendar")
-if not os.path.exists(OUTPUT_DIR): os.makedirs(OUTPUT_DIR)
+if not os.path.exists(OUTPUT_DIR): os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-def create_calendar_html(year, month, daily_records, output_path):
-    html = f"""<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><style>
-            @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
-            body {{ font-family: 'Noto Sans KR', sans-serif; padding: 20px; }}
-            h2 {{ text-align: center; margin-bottom: 20px; }}
-            table {{ width: 100%; height: 80vh; border-collapse: collapse; table-layout: fixed; }}
-            th {{ background-color: #eee; height: 30px; border: 1px solid #333; }}
-            td {{ border: 1px solid #333; vertical-align: top; padding: 5px; position: relative; }}
-            .day-num {{ font-weight: bold; margin-bottom: 5px; display: block; }}
-            .event {{ font-size: 0.85em; margin-bottom: 2px; line-height: 1.3; }}
-            .sun {{ color: red; }} .sat {{ color: blue; }}
-            @media print {{ @page {{ size: A4 landscape; margin: 5mm; }} body {{ padding: 0; }} table {{ height: 95vh; }} }}
-        </style></head><body>
-        <h2>{year}년 {month}월 학급 생활기록</h2>
-        <table><thead><tr><th class="sun">일</th><th>월</th><th>화</th><th>수</th><th>목</th><th>금</th><th class="sat">토</th></tr></thead><tbody><tr>"""
+# Utils 인스턴스
+date_calc = DateCalculator(PROJECT_ROOT) if has_utils else None
+tmpl_mgr = TemplateManager(PROJECT_ROOT) if has_utils else None
+
+def get_holiday_info(date_obj):
+    """
+    해당 날짜가 공휴일인지 확인하고, 공휴일 이름을 반환
+    (DateCalculator 활용)
+    """
+    if not date_calc: return None
     
-    import calendar
-    _, last_day = calendar.monthrange(year, month)
-    first_weekday = datetime.date(year, month, 1).weekday() 
-    start_col = (first_weekday + 1) % 7 
-    current_col = 0
+    # DateCalculator._load_holidays는 내부 메서드지만, 
+    # 편의상 여기서 휴일 목록(Set)을 가져와서 이름(Dict)으로 매핑하는 로직이 필요함.
+    # 하지만 DateCalculator는 현재 Set(날짜)만 반환하므로, 
+    # 정확한 '공휴일 이름'을 표시하려면 DateCalculator를 조금 수정하거나
+    # 여기서 holidays.json을 직접 읽어야 함.
+    # -> 간편하게: is_school_day가 False이고 평일이면 '휴일'로 표시하거나,
+    # -> 정석대로: DateCalculator에 get_holiday_name 메서드를 추가하는 것이 좋음.
     
-    for _ in range(start_col): html += "<td></td>"; current_col += 1
+    # 여기서는 DateCalculator의 휴일 Set에 날짜가 있는지만 체크 (이름 표시는 추후 고도화)
+    date_str = date_obj.strftime("%Y-%m-%d")
+    holidays = date_calc._load_holidays(date_obj.year)
+    
+    if date_str in holidays:
+        # 휴일 이름 매핑 로직이 없다면 그냥 True 반환 (CSS로 빨갛게만 표시)
+        return "공휴일/재량휴업" 
+    return None
+
+def build_calendar_data(year, month, daily_records):
+    """
+    달력 템플릿에 넘길 2차원 리스트(Weeks -> Days) 생성
+    """
+    cal = calendar.monthcalendar(year, month)
+    calendar_weeks = []
+    
+    for week in cal:
+        week_data = []
+        for day_num, weekday in zip(week, range(7)):
+            if day_num == 0:
+                week_data.append({'day_num': 0, 'css_class': 'empty'})
+                continue
+            
+            current_date = datetime.date(year, month, day_num)
+            events = daily_records.get(day_num, [])
+            
+            # 스타일 결정
+            num_class = ""
+            css_class = ""
+            holiday_name = None
+            
+            # 1. 요일별 색상 (일=sun, 토=sat)
+            if weekday == 6: num_class = "sun" # 일요일
+            elif weekday == 5: num_class = "sat" # 토요일
+            
+            # 2. 공휴일 체크 (빨간색 덮어쓰기)
+            # DateCalculator 활용
+            if date_calc and not date_calc.is_school_day(current_date) and weekday < 5:
+                # 평일인데 쉬는 날이면 공휴일/재량휴업일
+                num_class = "holiday"
+                css_class = "holiday-bg"
+                
+                # 공휴일 이름 가져오기 (json 직접 조회 - 임시)
+                # 실제로는 DateCalculator에 get_holiday_name 기능 추가 권장
+                # 여기선 간단히 '휴일' 표시
+                # holiday_name = "휴일" 
+
+            week_data.append({
+                'day_num': day_num,
+                'num_class': num_class,
+                'css_class': css_class,
+                'holiday_name': holiday_name,
+                'events': events
+            })
+        calendar_weeks.append(week_data)
         
-    for day in range(1, last_day + 1):
-        if current_col == 7: html += "</tr><tr>"; current_col = 0
-        cls = "sun" if current_col == 0 else "sat" if current_col == 6 else ""
-        content = f"<span class='day-num {cls}'>{day}</span>"
-        if day in daily_records:
-            for rec in daily_records[day]: content += f"<div class='event'>{rec}</div>"
-        html += f"<td>{content}</td>"; current_col += 1
-        
-    while current_col < 7: html += "<td></td>"; current_col += 1
-    html += "</tr></tbody></table></body></html>"
-    
-    with open(output_path, "w", encoding="utf-8") as f: f.write(html)
+    return calendar_weeks
 
 def run_calendar(target_months=None):
-              
-    # 인자가 없으면 전체 월 실행
     if target_months is None: target_months = ACADEMIC_MONTHS
     
     print(f"=== 생활기록 달력 생성 (대상: {target_months}) ===")
-    master_roster = get_master_roster() 
+    
+    try:
+        master_roster = get_master_roster()
+    except:
+        print("❌ 명렬표 로드 실패")
+        return
     
     for month in target_months:
         year = TARGET_YEAR + 1 if month < 3 else TARGET_YEAR
         
-        raw_events = load_all_events(None, month, master_roster)
+        # 데이터 로드
+        try:
+            raw_events = load_all_events(None, month, master_roster)
+        except:
+            print(f"⚠️ {month}월 데이터 로드 실패, 빈 달력 생성")
+            raw_events = []
+
+        # 일별 데이터 정리
         daily = {}
         if raw_events:
             for e in raw_events:
                 day = e['date'].day
                 if day not in daily: daily[day] = []
+                
+                # 표시 형식: "1 홍길동 : 질병결석"
                 daily[day].append(f"{e['num']} {e['name']} : {e['type']}")
-            for d in daily: daily[d].sort(key=lambda x: int(x.split()[0]))
+            
+            # 번호순 정렬
+            for d in daily:
+                daily[d].sort(key=lambda x: int(x.split()[0]))
         
-        out = os.path.join(OUTPUT_DIR, f"{month:02d}월_생활기록_달력.html")
-        create_calendar_html(year, month, daily, out)
-        print(f"   -> {year}년 {month}월 완료")
+        # 템플릿 데이터 생성
+        calendar_weeks = build_calendar_data(year, month, daily)
+        
+        # HTML 렌더링
+        out_file = os.path.join(OUTPUT_DIR, f"{month:02d}월_생활기록_달력.html")
+        context = {
+            'year': year,
+            'month': month,
+            'calendar_weeks': calendar_weeks
+        }
+        
+        if tmpl_mgr and tmpl_mgr.render_and_save("calendar_template.html", context, out_file):
+            print(f"   -> {year}년 {month}월 완료")
+        else:
+            print(f"   ❌ {month}월 달력 생성 실패")
 
 if __name__ == "__main__":
-    # 단독 실행 시 전체 생성
     run_calendar()

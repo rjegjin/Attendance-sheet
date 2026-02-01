@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ year }}년 {{ month }}월 학급 생활기록</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
+        body { font-family: 'Noto Sans KR', sans-serif; padding: 20px; }
+        h2 { text-align: center; margin-bottom: 20px; }
+        table { width: 100%; height: 80vh; border-collapse: collapse; table-layout: fixed; }
+        th { background-color: #eee; height: 30px; border: 1px solid #333; }
+        td { border: 1px solid #333; vertical-align: top; padding: 5px; position: relative; }
+        
+        .day-num { font-weight: bold; margin-bottom: 5px; display: block; }
+        .event { font-size: 0.85em; margin-bottom: 2px; line-height: 1.3; }
+        
+        /* 요일 색상 */
+        .sun { color: red; }
+        .sat { color: blue; }
+        
+        /* 공휴일 스타일 (빨간 날) */
+        .holiday { color: red !important; }
+        .holiday-bg { background-color: #fff0f0; } /* 공휴일 배경 살짝 붉게 */
+        
+        /* 공휴일 이름 표시 */
+        .holiday-name { 
+            font-size: 0.8em; color: red; display: block; margin-top: -2px; margin-bottom: 4px; 
+        }
+
+        @media print { 
+            @page { size: A4 landscape; margin: 5mm; } 
+            body { padding: 0; } 
+            table { height: 95vh; } 
+        }
+    </style>
+</head>
+<body>
+    <h2>{{ year }}년 {{ month }}월 학급 생활기록</h2>
+    <table>
+        <thead>
+            <tr>
+                <th class="sun">일</th>
+                <th>월</th>
+                <th>화</th>
+                <th>수</th>
+                <th>목</th>
+                <th>금</th>
+                <th class="sat">토</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for week in calendar_weeks %}
+            <tr>
+                {% for day in week %}
+                <td class="{{ day.css_class }}">
+                    {% if day.day_num %}
+                        <span class="day-num {{ day.num_class }}">{{ day.day_num }}</span>
+                        
+                        {% if day.holiday_name %}
+                            <span class="holiday-name">{{ day.holiday_name }}</span>
+                        {% endif %}
+                        
+                        {% for event in day.events %}
+                            <div class="event">{{ event }}</div>
+                        {% endfor %}
+                    {% endif %}
+                </td>
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>

@@ -1,123 +1,145 @@
 import os
-import datetime
-from jinja2 import Environment, FileSystemLoader
+import sys
+
+# 프로젝트 루트 경로 설정
+BASE_PATH = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(BASE_PATH))
+if PROJECT_ROOT not in sys.path:
+    sys.path.append(PROJECT_ROOT)
+
+# [Import] 데이터 로더 & 서비스
 from src.services.data_loader import load_all_events, get_master_roster, ACADEMIC_MONTHS
-from src.paths import REPORTS_DIR, SRC_DIR
+from src.paths import REPORTS_DIR
 import src.services.universal_notification as bot
 
-# [설정] 경로 및 템플릿 환경
+# [Import] Utils (DateCalculator & TemplateManager)
+try:
+    from src.utils.date_calculator import DateCalculator
+    from src.utils.template_manager import TemplateManager
+    has_utils = True
+except ImportError:
+    has_utils = False
+    print("⚠️ [Warning] Utils 모듈을 찾을 수 없습니다.")
+
+# 경로 및 설정
 OUTPUT_DIR = os.path.join(str(REPORTS_DIR), "stats")
-TEMPLATE_DIR = os.path.join(str(SRC_DIR), "templates")
 if not os.path.exists(OUTPUT_DIR): os.makedirs(OUTPUT_DIR, exist_ok=True)
-if not os.path.exists(TEMPLATE_DIR): os.makedirs(TEMPLATE_DIR, exist_ok=True)
 
-env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
+# [설정] 체험학습 규정 (일수)
+LIMITS = {
+    'dom_total': 10,       # 국내 연간 총량
+    'dom_cons': 5,         # 국내 연속 허용
+    'intl_total': 10       # 국외 연간 총량
+}
 
-# [설정] 체험학습 규정
-LIMIT_DOMESTIC_TOTAL = 10      
-LIMIT_DOMESTIC_CONSECUTIVE = 5 
-LIMIT_INTL_TOTAL = 10          
+# Utils 인스턴스
+date_calc = DateCalculator(PROJECT_ROOT) if has_utils else None
+tmpl_mgr = TemplateManager(PROJECT_ROOT) if has_utils else None
 
-def calculate_periods(dates):
-    """날짜 리스트를 받아 기간과 최대 연속일수를 계산"""
-    if not dates: return [], 0
-    dates = sorted(list(set(dates)))
-    periods = []
-    
-    current_streak = 1
-    start_date = dates[0]
-    prev_date = dates[0]
-    max_consecutive = 1
-    
-    for i in range(1, len(dates)):
-        curr_date = dates[i]
-        delta = (curr_date - prev_date).days
-        if delta <= 4: # 주말/공휴일 포함 4일 이내 간격은 연속으로 간주
-            current_streak += 1
-        else:
-            periods.append((start_date, prev_date, current_streak))
-            max_consecutive = max(max_consecutive, current_streak)
-            current_streak = 1
-            start_date = curr_date
-        prev_date = curr_date
-        
-    periods.append((start_date, prev_date, current_streak))
-    max_consecutive = max(max_consecutive, current_streak)
-    return periods, max_consecutive
+# =========================================================
+# 분석 로직
+# =========================================================
+
+def calculate_max_consecutive(grouped_events):
+    """그룹화된 이벤트 리스트에서 최대 연속 일수(수업일수 기준) 계산"""
+    max_days = 0
+    for g in grouped_events:
+        # DateCalculator가 계산해준 'real_days' 사용 (없으면 기간 사용)
+        days = g.get('real_days', (g['end'] - g['start']).days + 1)
+        if days > max_days:
+            max_days = days
+    return max_days
 
 def analyze_field_trips(roster):
-    # [1] 데이터 수집 (안전하게 모든 학생 대상)
-    # 구조: { 번호: { 'name': 이름, 'dom': [], 'int': [] } }
-    raw_data = {num: {'name': name, 'dom': [], 'int': []} for num, name in roster.items()}
-    
+    """
+    학생별 체험학습 데이터 분석
+    - 국내/국외 분리
+    - 휴일 제외 실제 수업일수 계산 (DateCalculator 활용)
+    """
     print("   📊 [분석] 국내/국외 체험학습 데이터 분석 중...")
     
+    # 데이터 수집용 구조체 초기화
+    raw_data = {num: {'name': name, 'dom': [], 'int': []} for num, name in roster.items()}
+    
+    # 1. 전체 데이터 로드 및 분류
     for month in ACADEMIC_MONTHS:
-        events = load_all_events(None, month, roster)
+        try:
+            events = load_all_events(None, month, roster)
+        except: continue
+            
         for e in events:
-            full_text = (e['raw_type'] + e['reason']).replace(" ", "")
-            if ("체험" in full_text or "교외" in full_text) and not e['is_unexcused']:
-                
+            full_text = (e['raw_type'] + str(e.get('reason',''))).replace(" ", "")
+            
+            # '체험' 또는 '교외' 키워드가 있고, 미인정이 아닌 경우
+            if ("체험" in full_text or "교외" in full_text) and not e.get('is_unexcused'):
                 num = e['num']
-                # 명렬표에 없는 학생(전학/누락)이라도 기록이 있으면 추가 (에러 방지)
                 if num not in raw_data:
                     raw_data[num] = {'name': e['name'], 'dom': [], 'int': []}
 
                 is_intl = any(k in full_text for k in ["국외", "해외", "유학", "출국", "비자"])
-                if is_intl: 
-                    raw_data[num]['int'].append(e['date'])
-                else: 
-                    raw_data[num]['dom'].append(e['date'])
+                target_list = raw_data[num]['int'] if is_intl else raw_data[num]['dom']
+                target_list.append(e)
 
-    # [2] 리포트 데이터 생성 (여기서 필터링 적용!)
+    # 2. 학생별 통계 산출 (DateCalculator로 그룹화)
     students_data = []
     alerts = []
     
     for num in sorted(raw_data.keys()):
-        student_info = raw_data[num]
-        name = student_info['name']
-        d_dates = student_info['dom']
-        i_dates = student_info['int']
+        s_info = raw_data[num]
+        name = s_info['name']
         
-        # 🚨 [핵심 수정] 국내/국외 모두 사용 내역이 없으면 리포트에서 제외
-        if not d_dates and not i_dates: 
-            continue
-        
-        d_periods, d_max = calculate_periods(d_dates)
-        i_periods, i_max = calculate_periods(i_dates)
-        
-        # 위반 여부 체크
-        is_d_over = len(d_dates) > LIMIT_DOMESTIC_TOTAL
-        is_i_over = len(i_dates) > LIMIT_INTL_TOTAL
-        is_d_cons_over = d_max > LIMIT_DOMESTIC_CONSECUTIVE
-        
-        # 알림 메시지 생성
-        if is_d_over: alerts.append(f"{name}: 국내 {len(d_dates)}일 (초과)")
-        if is_i_over: alerts.append(f"{name}: 국외 {len(i_dates)}일 (초과)")
-        if is_d_cons_over: alerts.append(f"{name}: 국내연속 {d_max}일 (주의)")
+        # 국내/국외 각각 스마트 그룹화 (휴일 건너뛰기 & 일수 계산)
+        # Utils가 없으면 data_loader의 구형 함수 사용 (Fallback)
+        if has_utils:
+            dom_groups = date_calc.group_consecutive_events(s_info['dom'])
+            int_groups = date_calc.group_consecutive_events(s_info['int'])
+        else:
+            # 여기서는 편의상 빈 리스트 처리 (실제로는 data_loader 사용 가능)
+            dom_groups, int_groups = [], []
 
-        # 뱃지(Badges) 생성
-        badges = []
-        if is_d_over: badges.append({'text': f'국내초과({len(d_dates)})', 'color_class': 'bg-red'})
-        if is_d_cons_over: badges.append({'text': f'연속주의({d_max}일)', 'color_class': 'bg-orange'})
-        if is_i_over: badges.append({'text': f'국외초과({len(i_dates)})', 'color_class': 'bg-red'})
+        # 사용 내역이 없으면 스킵
+        if not dom_groups and not int_groups: continue
         
-        # 카드 테두리 색상 결정
+        # 총 사용일수 및 최대 연속일수 계산
+        dom_total = sum(g.get('real_days', 1) for g in dom_groups)
+        dom_max_cons = calculate_max_consecutive(dom_groups)
+        
+        int_total = sum(g.get('real_days', 1) for g in int_groups)
+        # 국외는 연속 제한이 없다면 계산 생략 가능
+        
+        # 규정 위반 체크
+        is_d_over = dom_total > LIMITS['dom_total']
+        is_i_over = int_total > LIMITS['intl_total']
+        is_d_cons_over = dom_max_cons > LIMITS['dom_cons']
+        
+        # 알림 메시지
+        if is_d_over: alerts.append(f"{name}: 국내 {dom_total}일 (초과)")
+        if is_i_over: alerts.append(f"{name}: 국외 {int_total}일 (초과)")
+        if is_d_cons_over: alerts.append(f"{name}: 국내연속 {dom_max_cons}일 (주의)")
+
+        # 뱃지 생성
+        badges = []
+        if is_d_over: badges.append({'text': f'국내초과({dom_total})', 'color_class': 'bg-red'})
+        if is_d_cons_over: badges.append({'text': f'연속주의({dom_max_cons}일)', 'color_class': 'bg-orange'})
+        if is_i_over: badges.append({'text': f'국외초과({int_total})', 'color_class': 'bg-red'})
+        
+        # 스타일 클래스
         card_class = ""
-        if d_dates or i_dates: card_class = "has-data"
+        if dom_groups or int_groups: card_class = "has-data"
         if is_d_cons_over: card_class = "warning"
         if is_d_over or is_i_over: card_class = "violation"
 
-        # 상세 내역 텍스트 가공
-        d_details_list = []
-        for s, e, days in d_periods:
-            txt = f"{s.strftime('%m.%d')}~{e.strftime('%m.%d')}({days}일)"
-            if days > LIMIT_DOMESTIC_CONSECUTIVE: txt = f"<b style='color:#fd7e14'>{txt}</b>"
-            d_details_list.append(txt)
-            
-        i_details_list = []
-        for s, e, days in i_periods:
-            i_details_list.append(f"{s.strftime('%m.%d')}~{e.strftime('%m.%d')}({days}일)")
+        # 상세 내역 텍스트 생성 (HTML 태그 포함 가능)
+        def format_details(groups, limit_cons=None):
+            details = []
+            for g in groups:
+                days = g.get('real_days', 1)
+                txt = f"{g['start'].strftime('%m.%d')}~{g['end'].strftime('%m.%d')}({days}일)"
+                # 연속일수 초과 시 강조
+                if limit_cons and days > limit_cons:
+                    txt = f"<b style='color:#fd7e14'>{txt}</b>"
+                details.append(txt)
+            return " / ".join(details)
 
         students_data.append({
             'num': num,
@@ -125,41 +147,40 @@ def analyze_field_trips(roster):
             'card_class': card_class,
             'badges': badges,
             'dom': {
-                'total': len(d_dates),
-                'pct': min((len(d_dates)/LIMIT_DOMESTIC_TOTAL)*100, 100),
+                'total': dom_total,
+                'pct': min((dom_total / LIMITS['dom_total']) * 100, 100),
                 'color': "#28a745" if not is_d_over else "#dc3545",
-                'details': " / ".join(d_details_list)
+                'details': format_details(dom_groups, LIMITS['dom_cons'])
             },
             'intl': {
-                'total': len(i_dates),
-                'pct': min((len(i_dates)/LIMIT_INTL_TOTAL)*100, 100) if LIMIT_INTL_TOTAL > 0 else 0,
+                'total': int_total,
+                'pct': min((int_total / LIMITS['intl_total']) * 100, 100) if LIMITS['intl_total'] > 0 else 0,
                 'color': "#17a2b8" if not is_i_over else "#dc3545",
-                'details': " / ".join(i_details_list)
+                'details': format_details(int_groups)
             }
         })
-
+        
     return students_data, alerts
 
 def run_fieldtrip_stats():
-    print(f"=== 교외체험학습 연간 통계 (Jinja2) ===")
+    print(f"=== 교외체험학습 연간 통계 (Jinja2 & DateCalculator) ===")
+    
     roster = get_master_roster()
     students_data, alerts = analyze_field_trips(roster)
     
-    # Jinja2 템플릿 렌더링
-    template = env.get_template("stats_fieldtrip.html")
-    html = template.render(
-        limits={
-            'dom_total': LIMIT_DOMESTIC_TOTAL,
-            'dom_cons': LIMIT_DOMESTIC_CONSECUTIVE,
-            'intl_total': LIMIT_INTL_TOTAL
-        },
-        students=students_data
-    )
-    
+    # 템플릿 렌더링
     out_file = os.path.join(OUTPUT_DIR, "연간_체크_체험학습통계.html")
-    with open(out_file, "w", encoding="utf-8") as f: f.write(html)
-    print(f"   ✅ 리포트 생성 완료: {out_file}")
+    context = {
+        'limits': LIMITS,
+        'students': students_data
+    }
+    
+    if tmpl_mgr and tmpl_mgr.render_and_save("stats_fieldtrip.html", context, out_file):
+        print(f"   ✅ 리포트 생성 완료: {out_file}")
+    else:
+        print("❌ 템플릿 렌더링 실패")
 
+    # 알림 발송
     if alerts:
         bot.send_alert(f"🚌 [체험학습 주의/초과 알림]\n" + "\n".join(alerts))
         print(f"   🔔 알림 전송 완료 ({len(alerts)}건)")
