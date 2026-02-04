@@ -14,8 +14,7 @@ def display_html_report(file_path, height=800):
         
         st.components.v1.html(html, height=height, scrolling=True)
     else:
-        st.info(f"ℹ️ 생성된 리포트가 없습니다. 먼저 '생성/분석 실행' 버튼을 눌러주세요.
-(경로: {os.path.basename(file_path)})")
+        st.info(f"ℹ️ 생성된 리포트가 없습니다. 먼저 '생성/분석 실행' 버튼을 눌러주세요.\n(경로: {os.path.basename(file_path)})")
 
 def set_page(page_name):
     """페이지 이동 (메뉴 변경)"""
