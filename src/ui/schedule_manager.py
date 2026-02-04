@@ -18,9 +18,7 @@ def render(current_year):
         if 'gcp_service_account' in st.secrets:
             creds = dict(st.secrets['gcp_service_account'])
             if 'private_key' in creds:
-                creds['private_key'] = creds['private_key'].replace('
-', '
-')
+                creds['private_key'] = creds['private_key'].replace('\\n', '\n')
         
         success, msg = ssm.connect_google_api(credentials_dict=creds)
         if success:
