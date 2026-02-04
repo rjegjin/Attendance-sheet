@@ -30,6 +30,20 @@ def load_config():
         except Exception as e:
             print(f"⚠️ [Config] config.json 로드 실패: {e}")
 
+    # [New] Streamlit Secrets 우선 적용 (Override)
+    # config.json이 있어도 secrets.toml의 내용이 더 우선순위를 가짐
+    try:
+        import streamlit as st
+        if hasattr(st, "secrets") and "app_config" in st.secrets:
+            secrets_config = dict(st.secrets["app_config"])
+            # 딕셔너리는 재귀적으로 업데이트되지 않으므로 주의 (1단계만 병합)
+            config.update(secrets_config)
+            print("🔒 [Config] Streamlit Secrets 설정을 우선 적용했습니다.")
+    except ImportError:
+        pass  # Streamlit 환경이 아니면 무시
+    except Exception as e:
+        print(f"⚠️ [Config] Secrets 로드 중 오류: {e}")
+
     # 3. 휴일 파일 동적 로드 (holidays_2025.json 등)
     target_year = config.get("target_year")
     
