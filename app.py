@@ -146,6 +146,15 @@ with st.sidebar:
     st.write("📅 **분석 대상 월 선택**")
     all_months = getattr(data_loader, 'ACADEMIC_MONTHS', [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2])
     
+    # [버튼] 전체 선택 / 해제
+    col_sel1, col_sel2 = st.columns(2)
+    if col_sel1.button("✅ 전체 선택", use_container_width=True):
+        st.session_state['selected_months'] = all_months
+        st.rerun()
+    if col_sel2.button("❌ 선택 해제", use_container_width=True):
+        st.session_state['selected_months'] = []
+        st.rerun()
+    
     # 현재 월 자동 선택 (기본값)
     now = datetime.datetime.now()
     default_month = [now.month] if now.month in all_months else [3]
