@@ -41,7 +41,11 @@ ensure_directories()
 
 # 기존 load_config 함수 제거됨
 
-GOOGLE_SHEET_URL = GLOBAL_CONFIG.get("spreadsheet_url", "https://docs.google.com/spreadsheets/d/1Jlyok_qOggzj-KeC1O8xqa6OPyRm8KDw9P7ojNXc4UE/edit")
+# [Refactor] URL 하드코딩 제거. Config Manager가 결정한 값을 사용하거나 빈 문자열.
+GOOGLE_SHEET_URL = GLOBAL_CONFIG.get("spreadsheet_url", "")
+if not GOOGLE_SHEET_URL:
+    print("⚠️ [DataLoader] 구글 시트 URL이 설정되지 않았습니다. config.json을 확인하세요.")
+
 TARGET_YEAR = GLOBAL_CONFIG.get("target_year", 2025)
 ACADEMIC_MONTHS = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2]
 

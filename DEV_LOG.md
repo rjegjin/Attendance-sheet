@@ -25,6 +25,11 @@
 [2026-02-04] [Fix] app.py 사이드바 '전체 선택/해제' 버튼 기능 추가.
 [2026-02-04] [Fix] main_controller.py 5번 메뉴(학사일정) 들여쓰기 오류 및 무한 루프 증상 해결.
 [2026-02-04] [Policy] PowerShell 환경 호환성을 위해 쉘 명령어 실행 시 `&&` 사용 금지 원칙 수립.
+[2026-02-04] [Refactor] 구글 스프레드시트 ID 관리 체계 개선.
+  - `config.json` 내 `spreadsheets` 필드를 통해 연도별 URL(ID) 관리 가능.
+  - `config_manager.py`에서 `target_year`에 맞는 URL 자동 로드.
+  - `data_loader.py` 내 하드코딩된 URL 제거.
+[2026-02-04] [Config] 시스템 연도를 2026년으로 업데이트 (`config.json` 수정).
 
 📌 다음 작업 예약 (To-Do)
 [ ] 리팩토링된 모듈들의 통합 테스트.

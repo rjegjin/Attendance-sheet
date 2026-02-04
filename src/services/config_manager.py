@@ -32,6 +32,20 @@ def load_config():
 
     # 3. 휴일 파일 동적 로드 (holidays_2025.json 등)
     target_year = config.get("target_year")
+    
+    # [New] 연도별 스프레드시트 URL 자동 매핑
+    # config.json에 "spreadsheets": {"2025": "url1", "2026": "url2"} 형태가 있다면,
+    # target_year에 맞는 URL을 "spreadsheet_url" 키로 승격시킴.
+    spreadsheets_map = config.get("spreadsheets", {})
+    str_year = str(target_year)
+    
+    if spreadsheets_map and str_year in spreadsheets_map:
+        config["spreadsheet_url"] = spreadsheets_map[str_year]
+        print(f"✅ [Config] {target_year}년도 시트 URL이 설정되었습니다.")
+    elif "spreadsheet_url" not in config:
+        # 매핑도 없고 단일 URL도 없으면 경고
+        print(f"⚠️ [Config] {target_year}년도 시트 URL을 찾을 수 없습니다.")
+
     holiday_file = BASE_DIR / f"holidays_{target_year}.json"
 
     if holiday_file.exists():
