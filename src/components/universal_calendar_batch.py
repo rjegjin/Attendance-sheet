@@ -2,16 +2,12 @@ import os
 import sys
 import datetime
 import calendar
-
-# 프로젝트 루트 경로 설정
-BASE_PATH = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(os.path.dirname(BASE_PATH))
-if PROJECT_ROOT not in sys.path:
-    sys.path.append(PROJECT_ROOT)
+from pathlib import Path
 
 # [Import] 데이터 로더 및 경로
+# src.paths를 통해 안전하게 루트 경로 및 데이터 경로를 가져옵니다.
+from src.paths import ROOT_DIR, REPORTS_DIR
 from src.services.data_loader import load_all_events, get_master_roster, TARGET_YEAR, ACADEMIC_MONTHS
-from src.paths import REPORTS_DIR
 
 # [Import] Utils (DateCalculator & TemplateManager)
 try:
@@ -23,18 +19,18 @@ except ImportError:
     print("⚠️ [Warning] Utils 모듈을 찾을 수 없습니다.")
 
 # 경로 설정
-OUTPUT_DIR = os.path.join(str(REPORTS_DIR), "calendar")
-if not os.path.exists(OUTPUT_DIR): os.makedirs(OUTPUT_DIR, exist_ok=True)
+OUTPUT_DIR = REPORTS_DIR / "calendar"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# Utils 인스턴스
-date_calc = DateCalculator(PROJECT_ROOT) if has_utils else None
-tmpl_mgr = TemplateManager(PROJECT_ROOT) if has_utils else None
+# Utils 인스턴스 (Default to ROOT_DIR via src.paths)
+date_calc = DateCalculator() if has_utils else None
+tmpl_mgr = TemplateManager() if has_utils else None
 
 def build_calendar_data(year, month, daily_records):
     """
     달력 템플릿에 넘길 2차원 리스트(Weeks -> Days) 생성
     """
-    # [핵심 수정 1] 달력 시작 요일을 '일요일(6)'로 설정 (파이썬 기본값은 월요일(0))
+    # [핵심] 달력 시작 요일을 '일요일(6)'로 설정
     calendar.setfirstweekday(6) 
     cal = calendar.monthcalendar(year, month)
     
@@ -58,17 +54,15 @@ def build_calendar_data(year, month, daily_records):
             css_class = ""
             is_holiday_name = "" 
             
-            # [핵심 수정 2] 요일별 색상 로직 변경 (일요일 시작 기준)
+            # 요일별 색상 로직
             if col_idx == 0: 
-                num_class = "sun" # 0번 인덱스 = 일요일 (빨강)
+                num_class = "sun" # 일요일 (빨강)
             elif col_idx == 6: 
-                num_class = "sat" # 6번 인덱스 = 토요일 (파랑)
+                num_class = "sat" # 토요일 (파랑)
             
-            # 2. 공휴일 체크 (평일인데 쉬는 날이면 빨간색)
-            # DateCalculator 활용
+            # 공휴일 체크 (DateCalculator 활용)
             if date_calc and not date_calc.is_school_day(current_date):
-                # current_date.weekday()는 설정과 무관하게 항상 월=0 ~ 일=6임
-                # 주말(5,6)이 아닌데 학교를 안 간다면 -> 평일 공휴일/재량휴업일
+                # 주말이 아닌데 학교를 안 가는 날 -> 평일 공휴일/재량휴업일
                 weekday_std = current_date.weekday()
                 if weekday_std < 5: 
                     num_class = "holiday"
@@ -124,7 +118,7 @@ def run_calendar(target_months=None):
         calendar_weeks = build_calendar_data(year, month, daily)
         
         # HTML 렌더링
-        out_file = os.path.join(OUTPUT_DIR, f"{month:02d}월_생활기록_달력.html")
+        out_file = OUTPUT_DIR / f"{month:02d}월_생활기록_달력.html"
         context = {
             'year': year,
             'month': month,
@@ -138,5 +132,3 @@ def run_calendar(target_months=None):
 
 if __name__ == "__main__":
     run_calendar()
-
-

@@ -2,12 +2,10 @@ import os
 import sys
 import datetime
 import gspread
+from pathlib import Path
 
-# 프로젝트 루트 경로 설정
-BASE_PATH = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(os.path.dirname(BASE_PATH))
-if PROJECT_ROOT not in sys.path:
-    sys.path.append(PROJECT_ROOT)
+# [Import] 경로 상수
+from src.paths import ROOT_DIR
 
 # [Import] 서비스 및 데이터 로더
 from src.services import data_loader 
@@ -26,8 +24,8 @@ except ImportError:
 # [설정] 서류 미제출 독촉 기준일 (5일 경과)
 DOCUMENT_DEADLINE_DAYS = 5
 
-# Utils 인스턴스 초기화
-date_calc = DateCalculator(PROJECT_ROOT) if has_utils else None
+# Utils 인스턴스 초기화 (Default to ROOT_DIR via src.paths)
+date_calc = DateCalculator() if has_utils else None
 
 def get_today_date():
     return datetime.date.today()
@@ -212,7 +210,6 @@ def send_document_reminder(roster):
         raw_type = group['raw_type']
         
         # [정책] 미인정/무단은 증빙서류 제출 대상이 아닐 수 있음 -> 제외
-        # 만약 미인정도 독촉해야 한다면 이 조건을 수정하세요.
         if ("미인정" in raw_type) or group.get('is_unexcused', False):
             continue
             
@@ -257,7 +254,7 @@ def run_daily_checks():
     print(" 🌅 [매일 아침/오후] 출결 종합 브리핑")
     print("="*40)
     
-    # 1. [Phase 4] 휴일/주말 실행 방지
+    # 1. 휴일/주말 실행 방지
     # DateCalculator가 있으면 스마트하게 체크, 없으면 주말만 체크
     if date_calc:
         if not date_calc.is_school_day(datetime.datetime.now()):

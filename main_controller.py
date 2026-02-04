@@ -32,6 +32,7 @@ try:
     from src.components import universal_menstrual_stats as menstrual_stats
     from src.components import universal_long_term_absence as absence_gen
     from src.components import daily_alert_system as daily_bot
+    from src.components.school_schedule_manager import SchoolScheduleManager
 
     # 4. 경로 상수
     from src.paths import CACHE_DIR, REPORTS_DIR
@@ -112,6 +113,7 @@ def get_menu_choice():
     print(" 2. 🚌 교외체험학습 연간 통계 분석")
     print(" 3. 🩸 생리인정결석 규정 위반 체크")
     print(" 4. 📉 장기결석 관리 (독촉 기준 체크)")
+    print(" 5. 📅 학사일정 업데이트 (Google Sheets)")
     print("-" * 50)
     print(" [유틸리티]")
     print(" 7. 🌅 아침 브리핑 & 알림 발송")
@@ -279,6 +281,37 @@ def main():
             if mode == '4' or mode == '6':
                 print("\n [4/4] 장기결석 관리...")
                 absence_gen.run_long_term_absence()
+
+            # [5] 학사일정
+            if mode == '5':
+                print("\n 📅 학사일정 업데이트를 시작합니다...")
+                ssm = SchoolScheduleManager(year=curr_year)
+                success, msg = ssm.connect_google_api()
+                if success:
+                    print(f" ✅ {msg}")
+                    success, msg = ssm.open_spreadsheet()
+                    if success:
+                        print(f" ✅ {msg}")
+                        worksheets = ssm.get_worksheets()
+                        print("\n 📑 시트 목록:")
+                        for i, ws in enumerate(worksheets):
+                            print(f"   {i+1}. {ws.title}")
+                        
+                        choice = input("\n 파싱할 시트 번호 선택 (Enter=1) > ").strip()
+                        idx = int(choice) - 1 if choice.isdigit() else 0
+                        ssm.set_worksheet(worksheets[idx])
+                        
+                        success, msg = ssm.parse_all_data()
+                        if success:
+                            print(f" ✅ {msg}")
+                            ssm.save_holidays_json()
+                            ssm.save_calendar_csv('4') # 전체
+                        else:
+                            print(f" ❌ {msg}")
+                    else:
+                        print(f" ❌ {msg}")
+                else:
+                    print(f" ❌ {msg}")
 
             # [공통] 인덱스 갱신
             last_index = None
